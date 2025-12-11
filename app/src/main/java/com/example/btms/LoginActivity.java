@@ -49,12 +49,23 @@ public class LoginActivity extends AppCompatActivity {
 
                 // Validate login
                 if (dbHelper.loginUser(email, password)) {
-                    // Save user email to shared preferences
+                    // Get user info from database
+                    android.content.ContentValues userInfo = dbHelper.getUserInfo(email);
+                    String userName = null;
+                    if (userInfo != null && userInfo.containsKey("name")) {
+                        userName = userInfo.getAsString("name");
+                    }
+                    
+                    // Save user email and name to shared preferences
                     SharedPreferences.Editor editor = sharedPreferences.edit();
                     editor.putString("user_email", email);
                     editor.putBoolean("is_logged_in", true);
+                    if (userName != null) {
+                        editor.putString("user_name", userName);
+                    }
                     editor.apply();
 
+                    Toast.makeText(this, "Login successful!", Toast.LENGTH_SHORT).show();
                     Intent intent = new Intent(LoginActivity.this, HomeActivity.class);
                     intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
                     startActivity(intent);
@@ -62,7 +73,7 @@ public class LoginActivity extends AppCompatActivity {
                 } else {
                     // Check if email exists
                     if (dbHelper.emailExists(email)) {
-                        Toast.makeText(this, "Invalid password or email not verified. Please check your email for verification.", Toast.LENGTH_LONG).show();
+                        Toast.makeText(this, "Invalid password. Please check your password and try again.", Toast.LENGTH_LONG).show();
                     } else {
                         Toast.makeText(this, "Email not found. Please create an account first.", Toast.LENGTH_SHORT).show();
                     }

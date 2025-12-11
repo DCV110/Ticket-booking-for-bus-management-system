@@ -87,6 +87,7 @@
                 android:padding="16dp">
 
                 <TextView
+                    android:id="@+id/tvCompanyName"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="Perera Travels"
@@ -95,6 +96,7 @@
                     android:textColor="@color/text_primary" />
 
                 <TextView
+                    android:id="@+id/tvPrice"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="LKR 200"
@@ -104,6 +106,7 @@
                     android:layout_marginTop="4dp" />
 
                 <TextView
+                    android:id="@+id/tvBusType"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="A/C Sleeper (2+2)"
@@ -112,6 +115,7 @@
                     android:layout_marginTop="4dp" />
 
                 <TextView
+                    android:id="@+id/tvDurationTime"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="45 Min | 9:00 AM - 9:45 AM"
@@ -120,6 +124,7 @@
                     android:layout_marginTop="4dp" />
 
                 <TextView
+                    android:id="@+id/tvSeatsLeft"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:text="15 Seats left"

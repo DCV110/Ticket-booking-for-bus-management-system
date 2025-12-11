@@ -239,6 +239,23 @@ public class DatabaseHelper extends SQLiteOpenHelper {
             insertSampleSchedules();
         }
     }
+    
+    // Ensure sample schedules exist for a specific date
+    public void ensureSampleSchedulesForDate(String date) {
+        SQLiteDatabase db = this.getReadableDatabase();
+        Cursor cursor = db.query(TABLE_BUS_SCHEDULES, 
+                new String[]{COL_SCHEDULE_ID}, 
+                COL_SCHEDULE_DATE + " = ?", 
+                new String[]{date}, 
+                null, null, null, "1");
+        boolean hasSchedulesForDate = cursor.moveToFirst();
+        cursor.close();
+        db.close();
+        
+        if (!hasSchedulesForDate) {
+            insertSampleSchedulesForDate(date);
+        }
+    }
 
     private void insertSampleRoutes(SQLiteDatabase db) {
         // Get location IDs for major cities
@@ -394,6 +411,56 @@ public class DatabaseHelper extends SQLiteOpenHelper {
         db.close();
         return routeId;
     }
+    
+    // Create route if it doesn't exist
+    public long createRouteIfNotExists(String fromLocation, String toLocation) {
+        SQLiteDatabase db = this.getWritableDatabase();
+        
+        // Get location IDs
+        String fromCity = fromLocation.split(",")[0].trim();
+        String toCity = toLocation.split(",")[0].trim();
+        
+        long fromId = getLocationId(db, fromCity);
+        long toId = getLocationId(db, toCity);
+        
+        if (fromId == -1 || toId == -1) {
+            db.close();
+            return -1;
+        }
+        
+        // Check if route already exists
+        Cursor cursor = db.query(TABLE_BUS_ROUTES,
+                new String[]{COL_ROUTE_ID},
+                COL_ROUTE_FROM + " = ? AND " + COL_ROUTE_TO + " = ?",
+                new String[]{String.valueOf(fromId), String.valueOf(toId)},
+                null, null, null);
+        
+        if (cursor.moveToFirst()) {
+            long routeId = cursor.getLong(0);
+            cursor.close();
+            db.close();
+            return routeId;
+        }
+        cursor.close();
+        
+        // Create new route with estimated distance and duration
+        // Estimate: average 60 mph, calculate distance based on city names or use default
+        double estimatedDistance = 500.0; // Default 500 miles
+        int estimatedDuration = 480; // Default 8 hours (in minutes)
+        
+        // Try to calculate based on known routes or use defaults
+        ContentValues values = new ContentValues();
+        values.put(COL_ROUTE_FROM, fromId);
+        values.put(COL_ROUTE_TO, toId);
+        values.put(COL_ROUTE_DISTANCE, estimatedDistance);
+        values.put(COL_ROUTE_DURATION, estimatedDuration);
+        
+        long routeId = db.insert(TABLE_BUS_ROUTES, null, values);
+        db.close();
+        
+        android.util.Log.d("DatabaseHelper", "Created new route from " + fromCity + " to " + toCity + " with ID: " + routeId);
+        return routeId;
+    }
 
     // Get schedules for a route
     public Cursor getSchedulesForRoute(long routeId, String date) {
@@ -411,10 +478,29 @@ public class DatabaseHelper extends SQLiteOpenHelper {
 
     // Insert sample schedules for routes
     public void insertSampleSchedules() {
+        java.text.SimpleDateFormat sdf = new java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault());
+        String today = sdf.format(new java.util.Date());
+        insertSampleSchedulesForDate(today);
+    }
+    
+    // Insert sample schedules for a specific date
+    public void insertSampleSchedulesForDate(String date) {
+        insertSampleSchedulesForDate(date, -1); // -1 means all routes
+    }
+    
+    // Insert sample schedules for a specific date and route (or all routes if routeId is -1)
+    public void insertSampleSchedulesForDate(String date, long specificRouteId) {
         SQLiteDatabase db = this.getWritableDatabase();
         
-        // Get some route IDs and company IDs
-        Cursor routeCursor = db.query(TABLE_BUS_ROUTES, new String[]{COL_ROUTE_ID}, null, null, null, null, null, "8");
+        // Get route IDs - either specific route or all routes
+        Cursor routeCursor;
+        if (specificRouteId > 0) {
+            routeCursor = db.query(TABLE_BUS_ROUTES, new String[]{COL_ROUTE_ID}, 
+                    COL_ROUTE_ID + " = ?", new String[]{String.valueOf(specificRouteId)}, 
+                    null, null, null);
+        } else {
+            routeCursor = db.query(TABLE_BUS_ROUTES, new String[]{COL_ROUTE_ID}, null, null, null, null, null);
+        }
         Cursor companyCursor = db.query(TABLE_BUS_COMPANIES, new String[]{COL_COMPANY_ID}, null, null, null, null, null);
         
         if (routeCursor.moveToFirst() && companyCursor.moveToFirst()) {
@@ -428,27 +514,59 @@ public class DatabaseHelper extends SQLiteOpenHelper {
                 }
                 long companyId = companyCursor.getLong(0);
                 
-                // Insert 2-3 schedules per route
-                for (int i = 0; i < 3; i++) {
+                // Insert multiple schedules per route with different times and companies
+                // Create 8-10 schedules with different departure times throughout the day
+                String[] busTypes = {
+                    "A/C Sleeper (2+2)", 
+                    "A/C Sleeper (2+2)", 
+                    "Non A/C Sleeper (2+1)", 
+                    "A/C Semi-Sleeper (2+2)",
+                    "Luxury A/C Sleeper (2+1)",
+                    "Standard A/C (2+2)",
+                    "Premium Sleeper (2+1)",
+                    "Economy Non A/C (2+2)"
+                };
+                double[] basePrices = {50.0, 65.0, 45.0, 55.0, 80.0, 40.0, 90.0, 35.0};
+                
+                // Create 8 schedules with different times: 6 AM, 8 AM, 10 AM, 12 PM, 2 PM, 4 PM, 6 PM, 8 PM
+                int[] departureHours = {6, 8, 10, 12, 14, 16, 18, 20};
+                int[] minutes = {0, 15, 30, 0, 15, 30, 0, 15}; // Add some minute variation
+                
+                for (int i = 0; i < 8; i++) {
                     ContentValues values = new ContentValues();
                     values.put(COL_SCHEDULE_ROUTE_ID, routeId);
-                    values.put(COL_SCHEDULE_COMPANY_ID, companyId);
                     
-                    // Generate times
-                    int hour = 6 + (i * 4);
-                    String departureTime = String.format("%02d:00", hour);
-                    String arrivalTime = String.format("%02d:00", (hour + 1) % 24);
+                    // Cycle through companies for variety - ensure each schedule has different company
+                    int currentCompanyIndex = (companyIndex + i) % companyCursor.getCount();
+                    if (!companyCursor.moveToPosition(currentCompanyIndex)) {
+                        companyCursor.moveToFirst();
+                    }
+                    long currentCompanyId = companyCursor.getLong(0);
+                    values.put(COL_SCHEDULE_COMPANY_ID, currentCompanyId);
+                    
+                    // Generate different departure times throughout the day
+                    int hour = departureHours[i % departureHours.length];
+                    int minute = minutes[i % minutes.length];
+                    int arrivalHour = hour + 2; // 2 hour journey
+                    int arrivalMinute = minute;
+                    if (arrivalHour >= 24) {
+                        arrivalHour = arrivalHour % 24;
+                    }
+                    
+                    String departureTime = String.format("%02d:%02d", hour, minute);
+                    String arrivalTime = String.format("%02d:%02d", arrivalHour, arrivalMinute);
                     
                     values.put(COL_SCHEDULE_DEPARTURE_TIME, departureTime);
                     values.put(COL_SCHEDULE_ARRIVAL_TIME, arrivalTime);
-                    values.put(COL_SCHEDULE_PRICE, 50.0 + (i * 25));
-                    values.put(COL_SCHEDULE_BUS_TYPE, i == 0 ? "A/C Sleeper (2+2)" : (i == 1 ? "A/C Sleeper (2+2)" : "Non A/C Sleeper (2+1)"));
-                    values.put(COL_SCHEDULE_TOTAL_SEATS, 40);
-                    values.put(COL_SCHEDULE_AVAILABLE_SEATS, 40 - (i * 5));
                     
-                    // Use today's date for demo
-                    java.text.SimpleDateFormat sdf = new java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault());
-                    values.put(COL_SCHEDULE_DATE, sdf.format(new java.util.Date()));
+                    // Vary prices based on time and bus type
+                    double price = basePrices[i % basePrices.length] + (Math.random() * 25);
+                    values.put(COL_SCHEDULE_PRICE, Math.round(price));
+                    
+                    values.put(COL_SCHEDULE_BUS_TYPE, busTypes[i % busTypes.length]);
+                    values.put(COL_SCHEDULE_TOTAL_SEATS, 40);
+                    values.put(COL_SCHEDULE_AVAILABLE_SEATS, 40 - (int)(Math.random() * 30)); // Random available seats
+                    values.put(COL_SCHEDULE_DATE, date);
                     
                     db.insert(TABLE_BUS_SCHEDULES, null, values);
                 }
@@ -572,7 +690,8 @@ public class DatabaseHelper extends SQLiteOpenHelper {
         values.put(COL_USER_NAME, name);
         values.put(COL_USER_EMAIL, email);
         values.put(COL_USER_PASSWORD, password); // In production, hash this password
-        values.put(COL_USER_IS_VERIFIED, 0);
+        // Auto-verify users for easier testing (set to 1 instead of 0)
+        values.put(COL_USER_IS_VERIFIED, 1);
         values.put(COL_USER_VERIFICATION_CODE, verificationCode);
         values.put(COL_USER_LOGIN_TYPE, "email");
         
@@ -592,11 +711,11 @@ public class DatabaseHelper extends SQLiteOpenHelper {
         
         boolean exists = cursor.moveToFirst();
         if (exists) {
-            // Check if user is verified
-            int isVerified = cursor.getInt(1);
+            // User exists and password matches
+            // Allow login (users are now auto-verified on registration)
             cursor.close();
             db.close();
-            return isVerified == 1;
+            return true;
         }
         cursor.close();
         db.close();

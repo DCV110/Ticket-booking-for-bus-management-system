@@ -63,13 +63,21 @@ public class CreateAccountActivity extends AppCompatActivity {
             long userId = dbHelper.registerUser(name, email, password);
             
             if (userId > 0) {
-                // Get verification code
+                // Save user name to SharedPreferences
+                SharedPreferences.Editor editor = sharedPreferences.edit();
+                editor.putString("user_email", email);
+                editor.putString("user_name", name);
+                editor.apply();
+                
+                // Get verification code (user is auto-verified, but we still show verification screen)
                 String verificationCode = dbHelper.getVerificationCode(email);
                 
+                // Go to verification screen where user can click "Sign in here" to login
                 Intent intent = new Intent(CreateAccountActivity.this, VerificationActivity.class);
                 intent.putExtra("email", email);
                 intent.putExtra("verification_code", verificationCode);
                 startActivity(intent);
+                finish();
             } else {
                 Toast.makeText(this, "Registration failed. Email may already exist.", Toast.LENGTH_SHORT).show();
             }

@@ -1,5 +1,6 @@
 package com.example.btms;
 
+import android.app.DatePickerDialog;
 import android.content.Intent;
 import android.os.Bundle;
 import android.text.Editable;
@@ -9,15 +10,22 @@ import android.widget.ArrayAdapter;
 import android.widget.AutoCompleteTextView;
 import android.widget.Button;
 import android.widget.ImageButton;
+import android.widget.Toast;
 
 import androidx.appcompat.app.AppCompatActivity;
 
+import java.text.SimpleDateFormat;
+import java.util.Calendar;
+import java.util.Date;
 import java.util.List;
+import java.util.Locale;
 
 public class HomeActivity extends AppCompatActivity {
 
     private DatabaseHelper dbHelper;
     private ArrayAdapter<String> adapter;
+    private String selectedDate; // Format: yyyy-MM-dd
+    private int selectedDateType; // 0 = today, 1 = tomorrow, 2 = other
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -27,6 +35,7 @@ public class HomeActivity extends AppCompatActivity {
         try {
             dbHelper = new DatabaseHelper(this);
             
+            // Use AutoCompleteTextView from layout
             AutoCompleteTextView actvFrom = findViewById(R.id.actvFrom);
             AutoCompleteTextView actvTo = findViewById(R.id.actvTo);
             Button btnSearch = findViewById(R.id.btnSearch);
@@ -34,6 +43,14 @@ public class HomeActivity extends AppCompatActivity {
             Button btnToday = findViewById(R.id.btnToday);
             Button btnTomorrow = findViewById(R.id.btnTomorrow);
             Button btnOther = findViewById(R.id.btnOther);
+            
+            // Check if views are found
+            if (actvFrom == null || actvTo == null || btnSearch == null || btnSwap == null) {
+                android.util.Log.e("HomeActivity", "Some views are null");
+                android.widget.Toast.makeText(this, "Error loading views. Please restart the app.", android.widget.Toast.LENGTH_LONG).show();
+                finish();
+                return;
+            }
 
             // Get all locations from database
             List<String> locations = dbHelper.getAllLocations();
@@ -56,29 +73,20 @@ public class HomeActivity extends AppCompatActivity {
         
         // Show dropdown when focused
         actvFrom.setOnFocusChangeListener((v, hasFocus) -> {
-            if (hasFocus && actvFrom.getText().toString().isEmpty()) {
+            if (hasFocus) {
                 actvFrom.showDropDown();
             }
         });
         
         actvTo.setOnFocusChangeListener((v, hasFocus) -> {
-            if (hasFocus && actvTo.getText().toString().isEmpty()) {
+            if (hasFocus) {
                 actvTo.showDropDown();
             }
         });
         
         // Show dropdown when clicked
-        actvFrom.setOnClickListener(v -> {
-            if (actvFrom.getText().toString().isEmpty()) {
-                actvFrom.showDropDown();
-            }
-        });
-        
-        actvTo.setOnClickListener(v -> {
-            if (actvTo.getText().toString().isEmpty()) {
-                actvTo.showDropDown();
-            }
-        });
+        actvFrom.setOnClickListener(v -> actvFrom.showDropDown());
+        actvTo.setOnClickListener(v -> actvTo.showDropDown());
 
         // Add text change listeners for search functionality
         actvFrom.addTextChangedListener(new TextWatcher() {
@@ -149,9 +157,19 @@ public class HomeActivity extends AppCompatActivity {
             actvTo.setText(from);
         });
 
+        // Initialize with today's date
+        Calendar calendar = Calendar.getInstance();
+        SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd", Locale.getDefault());
+        selectedDate = dateFormat.format(calendar.getTime());
+        selectedDateType = 0; // Default to today
+        
         // Date selection buttons
         btnToday.setOnClickListener(v -> {
             // Set today's date
+            Calendar today = Calendar.getInstance();
+            selectedDate = dateFormat.format(today.getTime());
+            selectedDateType = 0;
+            
             btnToday.setBackgroundTintList(getColorStateList(R.color.red));
             btnToday.setTextColor(getColor(R.color.white));
             btnTomorrow.setBackgroundTintList(null);
@@ -162,6 +180,11 @@ public class HomeActivity extends AppCompatActivity {
 
         btnTomorrow.setOnClickListener(v -> {
             // Set tomorrow's date
+            Calendar tomorrow = Calendar.getInstance();
+            tomorrow.add(Calendar.DAY_OF_MONTH, 1);
+            selectedDate = dateFormat.format(tomorrow.getTime());
+            selectedDateType = 1;
+            
             btnTomorrow.setBackgroundTintList(getColorStateList(R.color.red));
             btnTomorrow.setTextColor(getColor(R.color.white));
             btnToday.setBackgroundTintList(null);
@@ -172,12 +195,32 @@ public class HomeActivity extends AppCompatActivity {
 
         btnOther.setOnClickListener(v -> {
             // Show date picker
-            btnOther.setBackgroundTintList(getColorStateList(R.color.red));
-            btnOther.setTextColor(getColor(R.color.white));
-            btnToday.setBackgroundTintList(null);
-            btnToday.setTextColor(getColor(R.color.red));
-            btnTomorrow.setBackgroundTintList(null);
-            btnTomorrow.setTextColor(getColor(R.color.red));
+            Calendar minDate = Calendar.getInstance();
+            minDate.add(Calendar.DAY_OF_MONTH, -1); // Allow today and future dates
+            
+            DatePickerDialog datePickerDialog = new DatePickerDialog(
+                this,
+                (view, year, month, dayOfMonth) -> {
+                    Calendar selected = Calendar.getInstance();
+                    selected.set(year, month, dayOfMonth);
+                    selectedDate = dateFormat.format(selected.getTime());
+                    selectedDateType = 2;
+                    
+                    btnOther.setBackgroundTintList(getColorStateList(R.color.red));
+                    btnOther.setTextColor(getColor(R.color.white));
+                    btnToday.setBackgroundTintList(null);
+                    btnToday.setTextColor(getColor(R.color.red));
+                    btnTomorrow.setBackgroundTintList(null);
+                    btnTomorrow.setTextColor(getColor(R.color.red));
+                },
+                calendar.get(Calendar.YEAR),
+                calendar.get(Calendar.MONTH),
+                calendar.get(Calendar.DAY_OF_MONTH)
+            );
+            
+            // Set minimum date to today
+            datePickerDialog.getDatePicker().setMinDate(minDate.getTimeInMillis());
+            datePickerDialog.show();
         });
 
         btnSearch.setOnClickListener(v -> {
@@ -185,13 +228,26 @@ public class HomeActivity extends AppCompatActivity {
             String to = actvTo.getText().toString().trim();
             
             if (from.isEmpty() || to.isEmpty()) {
-                // Show error message
+                Toast.makeText(this, "Please select departure and destination locations", Toast.LENGTH_SHORT).show();
                 return;
+            }
+            
+            if (from.equals(to)) {
+                Toast.makeText(this, "Departure and destination cannot be the same", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            
+            // Ensure selected date is set
+            if (selectedDate == null || selectedDate.isEmpty()) {
+                Calendar cal = Calendar.getInstance();
+                selectedDate = dateFormat.format(cal.getTime());
             }
             
             Intent intent = new Intent(HomeActivity.this, SelectBusActivity.class);
             intent.putExtra("from_location", from);
             intent.putExtra("to_location", to);
+            intent.putExtra("selected_date", selectedDate);
+            intent.putExtra("date_type", selectedDateType);
             startActivity(intent);
         });
 
