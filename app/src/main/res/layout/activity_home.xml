@@ -45,9 +45,10 @@
                 app:layout_constraintStart_toEndOf="@id/ivProfile">
 
                 <TextView
+                    android:id="@+id/tvGreeting"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="Hello Saduni Silva!"
+                    android:text="Xin chào!"
                     android:textSize="18sp"
                     android:textStyle="bold"
                     android:textColor="@color/text_primary" />
@@ -55,7 +56,7 @@
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="Where you want go"
+                    android:text="Bạn muốn đi đâu?"
                     android:textSize="14sp"
                     android:textColor="@color/text_secondary"
                     android:layout_marginTop="4dp" />
@@ -97,7 +98,7 @@
                         android:id="@+id/tilFrom"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:hint="Boarding From"
+                        android:hint="Điểm đi"
                         app:boxStrokeColor="@color/white"
                         app:hintTextColor="@color/white"
                         app:boxStrokeWidth="2dp"
@@ -131,7 +132,7 @@
                         android:id="@+id/tilTo"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:hint="Where are you going?"
+                        android:hint="Điểm đến"
                         app:boxStrokeColor="@color/white"
                         app:hintTextColor="@color/white"
                         app:boxStrokeWidth="2dp"
@@ -162,7 +163,7 @@
                             android:layout_width="0dp"
                             android:layout_height="36dp"
                             android:layout_weight="1"
-                            android:text="Today"
+                            android:text="Hôm nay"
                             android:textSize="12sp"
                             android:textColor="@color/red"
                             android:background="@drawable/bg_date_button"
@@ -173,7 +174,7 @@
                             android:layout_width="0dp"
                             android:layout_height="36dp"
                             android:layout_weight="1"
-                            android:text="Tomorrow"
+                            android:text="Ngày mai"
                             android:textSize="12sp"
                             android:textColor="@color/red"
                             android:background="@drawable/bg_date_button"
@@ -184,7 +185,7 @@
                             android:layout_width="0dp"
                             android:layout_height="36dp"
                             android:layout_weight="1"
-                            android:text="Other"
+                            android:text="Khác"
                             android:textSize="12sp"
                             android:textColor="@color/red"
                             android:background="@drawable/bg_date_button"
@@ -198,7 +199,7 @@
                         android:id="@+id/btnSearch"
                         android:layout_width="match_parent"
                         android:layout_height="56dp"
-                        android:text="Find Buses"
+                        android:text="Tìm chuyến xe"
                         android:textSize="16sp"
                         android:textStyle="bold"
                         android:textColor="@color/white"
@@ -212,7 +213,7 @@
                 android:id="@+id/tvUpcomingJourney"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="Upcoming Journey"
+                android:text="Hành trình sắp tới"
                 android:textSize="18sp"
                 android:textStyle="bold"
                 android:textColor="@color/dark_blue"
@@ -263,7 +264,7 @@
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="Bus terminal 1"
+                            android:text="Bến xe 1"
                             android:textSize="16sp"
                             android:textStyle="bold"
                             android:textColor="@color/text_primary" />
@@ -271,7 +272,7 @@
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="From : Kelaniya"
+                            android:text="Từ: Quận 1"
                             android:textSize="14sp"
                             android:textColor="@color/text_secondary"
                             android:layout_marginTop="4dp" />
@@ -279,7 +280,7 @@
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="to : Colombo"
+                            android:text="Đến: Quận 3"
                             android:textSize="14sp"
                             android:textColor="@color/text_secondary" />
                     </LinearLayout>
@@ -296,14 +297,14 @@
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="departure time"
+                            android:text="Giờ khởi hành"
                             android:textSize="10sp"
                             android:textColor="@color/white" />
 
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="9 AM , Sun"
+                            android:text="9:00, CN"
                             android:textSize="14sp"
                             android:textStyle="bold"
                             android:textColor="@color/white"
@@ -312,7 +313,7 @@
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="2024.12.08"
+                            android:text="08/12/2024"
                             android:textSize="12sp"
                             android:textStyle="bold"
                             android:textColor="@color/white"
@@ -363,7 +364,7 @@
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="Bus terminal 2"
+                            android:text="Bến xe 2"
                             android:textSize="16sp"
                             android:textStyle="bold"
                             android:textColor="@color/text_primary" />
@@ -371,7 +372,7 @@
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="From : Biyagama"
+                            android:text="Từ: Quận 5"
                             android:textSize="14sp"
                             android:textColor="@color/text_secondary"
                             android:layout_marginTop="4dp" />
@@ -379,7 +380,7 @@
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="to : Kelaniya"
+                            android:text="Đến: Quận 6"
                             android:textSize="14sp"
                             android:textColor="@color/text_secondary" />
                     </LinearLayout>
@@ -396,14 +397,14 @@
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="departure time"
+                            android:text="Giờ khởi hành"
                             android:textSize="10sp"
                             android:textColor="@color/white" />
 
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="2 PM , Sun"
+                            android:text="14:00, CN"
                             android:textSize="14sp"
                             android:textStyle="bold"
                             android:textColor="@color/white"
@@ -412,7 +413,7 @@
                         <TextView
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="2024.12.08"
+                            android:text="08/12/2024"
                             android:textSize="12sp"
                             android:textStyle="bold"
                             android:textColor="@color/white"

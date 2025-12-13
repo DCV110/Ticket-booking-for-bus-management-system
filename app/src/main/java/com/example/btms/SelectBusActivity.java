@@ -4,6 +4,7 @@ import android.content.Intent;
 import android.database.Cursor;
 import android.os.Bundle;
 import android.view.View;
+import android.view.ViewGroup;
 import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.TextView;
@@ -52,9 +53,9 @@ public class SelectBusActivity extends AppCompatActivity {
         TextView tvGreeting = findViewById(R.id.tvGreeting);
         if (tvGreeting != null) {
             if (userName != null && !userName.isEmpty()) {
-                tvGreeting.setText("Hello " + userName + "!");
+                tvGreeting.setText("Xin chào " + userName + "!");
             } else {
-                tvGreeting.setText("Hello!");
+                tvGreeting.setText("Xin chào!");
             }
         }
         
@@ -62,8 +63,8 @@ public class SelectBusActivity extends AppCompatActivity {
         fromLocation = getIntent().getStringExtra("from_location");
         toLocation = getIntent().getStringExtra("to_location");
         
-        if (fromLocation == null) fromLocation = "New York, NY";
-        if (toLocation == null) toLocation = "Los Angeles, CA";
+        if (fromLocation == null) fromLocation = "Quận 1";
+        if (toLocation == null) toLocation = "Quận 3";
 
         // Get selected date from intent (must be declared before use in lambda)
         selectedDate = getIntent().getStringExtra("selected_date");
@@ -153,87 +154,311 @@ public class SelectBusActivity extends AppCompatActivity {
     }
 
     private void loadBusSchedules(long routeId, String date) {
-        Cursor cursor = null;
+        // Use new method to get all schedules for routes from A to B (all route numbers)
+        Cursor cursor = dbHelper.getSchedulesForRouteByLocations(fromLocation, toLocation, date);
         
-        android.util.Log.d("SelectBusActivity", "Loading schedules for routeId: " + routeId + ", date: " + date);
+        android.util.Log.d("SelectBusActivity", "Loading schedules for from: " + fromLocation + ", to: " + toLocation + ", date: " + date);
         
-        if (routeId != -1) {
-            cursor = dbHelper.getSchedulesForRoute(routeId, date);
-            if (cursor != null) {
-                android.util.Log.d("SelectBusActivity", "Found " + cursor.getCount() + " schedules");
-            } else {
-                android.util.Log.e("SelectBusActivity", "Cursor is null");
-            }
+        if (cursor != null) {
+            android.util.Log.d("SelectBusActivity", "Found " + cursor.getCount() + " schedules");
         } else {
-            android.util.Log.e("SelectBusActivity", "Route ID is -1, route not found");
-            android.widget.Toast.makeText(this, "Route not found. Please select valid locations.", android.widget.Toast.LENGTH_LONG).show();
+            android.util.Log.e("SelectBusActivity", "Cursor is null");
+            android.widget.Toast.makeText(this, "Không tìm thấy chuyến xe. Vui lòng chọn địa điểm hợp lệ.", android.widget.Toast.LENGTH_LONG).show();
         }
+        
+        // Filter unique schedules by route_number and departure_time to avoid duplicates
+        java.util.List<java.util.Map<String, Object>> uniqueSchedules = new java.util.ArrayList<>();
+        java.util.Set<String> seenKeys = new java.util.HashSet<>();
+        
+        if (cursor != null && cursor.moveToFirst()) {
+            do {
+                try {
+                    int routeNumber = cursor.getInt(1);
+                    String departureTime = cursor.getString(2);
+                    String key = routeNumber + "_" + departureTime;
+                    
+                    if (!seenKeys.contains(key)) {
+                        seenKeys.add(key);
+                        java.util.Map<String, Object> schedule = new java.util.HashMap<>();
+                        schedule.put("schedule_id", cursor.getLong(0));
+                        schedule.put("route_number", routeNumber);
+                        schedule.put("departure_time", departureTime);
+                        schedule.put("arrival_time", cursor.getString(3));
+                        schedule.put("price", cursor.getDouble(4));
+                        schedule.put("bus_type", cursor.getString(5));
+                        schedule.put("available_seats", cursor.getInt(6));
+                        schedule.put("total_seats", cursor.getInt(7));
+                        schedule.put("route_id", cursor.getLong(8));
+                        uniqueSchedules.add(schedule);
+                    }
+                } catch (Exception e) {
+                    android.util.Log.e("SelectBusActivity", "Error processing schedule: " + e.getMessage(), e);
+                }
+            } while (cursor.moveToNext());
+        }
+        
+        android.util.Log.d("SelectBusActivity", "Unique schedules after filtering: " + uniqueSchedules.size());
         
         // Update bus cards with database data - show all available schedules
-        int[] cardIds = {R.id.cardBus1, R.id.cardBus2, R.id.cardBus3};
-        int[] buttonIds = {R.id.btnSelectBus1, R.id.btnSelectBus2, R.id.btnSelectBus3};
+        // Support up to 4 bus cards (can be extended later)
+        int[] cardIds = {R.id.cardBus1, R.id.cardBus2, R.id.cardBus3, R.id.cardBus4};
+        int[] buttonIds = {R.id.btnSelectBus1, R.id.btnSelectBus2, R.id.btnSelectBus3, R.id.btnSelectBus4};
         
-        int scheduleCount = cursor != null ? cursor.getCount() : 0;
-        android.util.Log.d("SelectBusActivity", "Total schedules found: " + scheduleCount);
+        int scheduleCount = uniqueSchedules.size();
+        android.util.Log.d("SelectBusActivity", "Total unique schedules: " + scheduleCount);
         
-        // Update all available cards (show up to 3, but we create 8 schedules)
-        for (int i = 0; i < cardIds.length && i < scheduleCount; i++) {
-            updateBusCard(cardIds[i], buttonIds[i], cursor, i);
+        // Show/hide cards based on available schedules
+        int maxCards = Math.min(cardIds.length, scheduleCount);
+        for (int i = 0; i < maxCards; i++) {
+            try {
+                View cardView = findViewById(cardIds[i]);
+                if (cardView != null && i < uniqueSchedules.size()) {
+                    cardView.setVisibility(View.VISIBLE);
+                    updateBusCardFromMap(cardIds[i], buttonIds[i], uniqueSchedules.get(i));
+                }
+            } catch (Exception e) {
+                android.util.Log.e("SelectBusActivity", "Error showing card " + i + ": " + e.getMessage(), e);
+            }
         }
         
-        // Hide remaining cards if we have less than 3 schedules
-        for (int i = scheduleCount; i < cardIds.length; i++) {
+        // Hide remaining cards if we have less schedules
+        for (int i = maxCards; i < cardIds.length; i++) {
             View cardView = findViewById(cardIds[i]);
             if (cardView != null) {
                 cardView.setVisibility(View.GONE);
             }
         }
         
+        // Close cursor after processing
         if (cursor != null && !cursor.isClosed()) {
             cursor.close();
         }
         
         // Show message if no schedules found
         if (scheduleCount == 0) {
-            android.widget.Toast.makeText(this, "No bus schedules found for this route and date. Please try a different date or route.", android.widget.Toast.LENGTH_LONG).show();
-        } else {
-            android.widget.Toast.makeText(this, "Found " + scheduleCount + " bus schedules", android.widget.Toast.LENGTH_SHORT).show();
+            android.widget.Toast.makeText(this, "Không tìm thấy chuyến xe cho tuyến này và ngày này. Vui lòng thử ngày khác hoặc tuyến khác.", android.widget.Toast.LENGTH_LONG).show();
         }
     }
 
-    // Refresh schedules: ensure route exists, create schedules if needed, then load
+    // Refresh schedules: ensure routes exist, create schedules if needed, then load
     private void refreshSchedules() {
-        // Get route ID, create if doesn't exist
-        long routeId = dbHelper.getRouteId(fromLocation, toLocation);
+        android.util.Log.d("SelectBusActivity", "refreshSchedules: From: " + fromLocation + ", To: " + toLocation + ", Date: " + selectedDate);
 
-        android.util.Log.d("SelectBusActivity", "From: " + fromLocation + ", To: " + toLocation + ", RouteId: " + routeId + ", Date: " + selectedDate);
-
-        if (routeId == -1) {
-            android.util.Log.w("SelectBusActivity", "Route not found, creating new route");
-            routeId = dbHelper.createRouteIfNotExists(fromLocation, toLocation);
-
-            if (routeId == -1) {
-                android.widget.Toast.makeText(this, "Could not create route. Please select valid locations.", android.widget.Toast.LENGTH_LONG).show();
-                return;
-            } else {
-                android.util.Log.d("SelectBusActivity", "Created new route with ID: " + routeId);
-                dbHelper.insertSampleSchedulesForDate(selectedDate, routeId);
+        try {
+            // Check if any routes exist from A to B
+            android.database.Cursor routeCheck = dbHelper.getSchedulesForRouteByLocations(fromLocation, toLocation, selectedDate);
+            boolean hasSchedules = routeCheck != null && routeCheck.getCount() > 0;
+            if (routeCheck != null) {
+                routeCheck.close();
             }
-        } else {
-            // Ensure schedules for this route and date
-            dbHelper.insertSampleSchedulesForDate(selectedDate, routeId);
-        }
 
-        loadBusSchedules(routeId, selectedDate);
+            if (!hasSchedules) {
+                android.util.Log.d("SelectBusActivity", "No schedules found, creating new routes and schedules");
+                
+                // Get or create routes (multiple routes for same A-B pair)
+                java.util.List<Long> routeIds = dbHelper.getAllRouteIdsForPair(fromLocation, toLocation);
+                
+                if (routeIds.isEmpty()) {
+                    android.util.Log.w("SelectBusActivity", "No routes found, creating new routes");
+                    long firstRouteId = dbHelper.createRouteIfNotExists(fromLocation, toLocation);
+
+                    if (firstRouteId == -1) {
+                        android.widget.Toast.makeText(this, "Không thể tạo tuyến. Vui lòng chọn địa điểm hợp lệ.", android.widget.Toast.LENGTH_LONG).show();
+                        return;
+                    } else {
+                        android.util.Log.d("SelectBusActivity", "Created new routes, first route ID: " + firstRouteId);
+                        // Get all route IDs again after creation
+                        routeIds = dbHelper.getAllRouteIdsForPair(fromLocation, toLocation);
+                    }
+                }
+                
+                // Create schedules for all routes (each route will have different schedules)
+                for (Long routeId : routeIds) {
+                    android.util.Log.d("SelectBusActivity", "Creating schedules for route ID: " + routeId);
+                    dbHelper.insertSampleSchedulesForDate(selectedDate, routeId);
+                }
+            }
+
+            // Load all schedules for routes from A to B (all route numbers)
+            loadBusSchedules(-1, selectedDate);
+        } catch (Exception e) {
+            android.util.Log.e("SelectBusActivity", "Error in refreshSchedules: " + e.getMessage(), e);
+            android.widget.Toast.makeText(this, "Lỗi khi tải chuyến xe: " + e.getMessage(), android.widget.Toast.LENGTH_LONG).show();
+        }
+    }
+    
+    private void updateBusCardFromMap(int cardId, int buttonId, java.util.Map<String, Object> schedule) {
+        View cardView = findViewById(cardId);
+        if (cardView == null) return;
+        
+        try {
+            long scheduleId = (Long) schedule.get("schedule_id");
+            int routeNumber = (Integer) schedule.get("route_number");
+            String departureTime = (String) schedule.get("departure_time");
+            String arrivalTime = (String) schedule.get("arrival_time");
+            double price = (Double) schedule.get("price");
+            String busType = (String) schedule.get("bus_type");
+            int availableSeats = (Integer) schedule.get("available_seats");
+            
+            // Calculate duration in minutes
+            String[] depParts = departureTime.split(":");
+            String[] arrParts = arrivalTime.split(":");
+            int depHour = Integer.parseInt(depParts[0]);
+            int depMin = depParts.length > 1 ? Integer.parseInt(depParts[1]) : 0;
+            int arrHour = Integer.parseInt(arrParts[0]);
+            int arrMin = arrParts.length > 1 ? Integer.parseInt(arrParts[1]) : 0;
+            
+            int depTotalMinutes = depHour * 60 + depMin;
+            int arrTotalMinutes = arrHour * 60 + arrMin;
+            int durationMinutes = arrTotalMinutes - depTotalMinutes;
+            if (durationMinutes < 0) {
+                durationMinutes += 24 * 60; // Add 24 hours if crossing midnight
+            }
+            if (durationMinutes == 0) durationMinutes = 1;
+            
+            // Format duration
+            String durationDisplay;
+            if (durationMinutes < 60) {
+                durationDisplay = durationMinutes + " Min";
+            } else {
+                int hours = durationMinutes / 60;
+                int minutes = durationMinutes % 60;
+                if (minutes == 0) {
+                    durationDisplay = hours + " Hr";
+                } else {
+                    durationDisplay = hours + " Hr " + minutes + " Min";
+                }
+            }
+            
+            // Format time for display
+            String timeDisplay = formatTime(departureTime) + " - " + formatTime(arrivalTime);
+            
+            // Update card content using findViewById within the card
+            CardView card = (CardView) cardView;
+            LinearLayout cardLayout = (LinearLayout) card.getChildAt(0);
+            if (cardLayout != null) {
+                // Find the first TextView (route/company name) - it's the first child
+                View firstChild = cardLayout.getChildAt(0);
+                if (firstChild instanceof TextView) {
+                    TextView tvCompany = (TextView) firstChild;
+                    tvCompany.setText("Tuyến số " + routeNumber);
+                    android.util.Log.d("SelectBusActivity", "Updated route name to: Tuyến số " + routeNumber);
+                } else {
+                    // Fallback: try finding by searching through children
+                    TextView tvCompany = findTextViewInLayout(cardLayout, 0);
+                    if (tvCompany != null) {
+                        tvCompany.setText("Tuyến số " + routeNumber);
+                        android.util.Log.d("SelectBusActivity", "Updated route name (fallback) to: Tuyến số " + routeNumber);
+                    } else {
+                        android.util.Log.e("SelectBusActivity", "Could not find TextView for route name in card");
+                    }
+                }
+                
+                // Also try to find TextView by searching all children recursively
+                TextView routeNameView = findTextViewByName(cardLayout, "Perera Travels", "Gayan Express", "Shehan Travels");
+                if (routeNameView != null) {
+                    routeNameView.setText("Tuyến số " + routeNumber);
+                    android.util.Log.d("SelectBusActivity", "Updated route name by text search to: Tuyến số " + routeNumber);
+                }
+                
+                LinearLayout priceLayout = (LinearLayout) cardLayout.getChildAt(1);
+                if (priceLayout != null) {
+                    TextView tvPrice = (TextView) priceLayout.getChildAt(0);
+                    if (tvPrice != null) {
+                        tvPrice.setText(String.format("%.0f", price) + " VNĐ");
+                    }
+                    TextView tvBusType = (TextView) priceLayout.getChildAt(1);
+                    if (tvBusType != null) {
+                        tvBusType.setText(busType);
+                    }
+                }
+                
+                LinearLayout timeLayout = (LinearLayout) cardLayout.getChildAt(2);
+                if (timeLayout != null) {
+                    TextView tvDuration = (TextView) timeLayout.getChildAt(0);
+                    if (tvDuration != null) {
+                        tvDuration.setText(durationDisplay);
+                    }
+                    TextView tvTime = (TextView) timeLayout.getChildAt(1);
+                    if (tvTime != null) {
+                        tvTime.setText(timeDisplay);
+                    }
+                }
+                
+                TextView tvSeats = findTextViewInLayout(cardLayout, 3);
+                if (tvSeats != null) {
+                    tvSeats.setText(availableSeats + " Seats left");
+                    if (availableSeats < 5) {
+                        tvSeats.setTextColor(getColor(R.color.red));
+                    } else if (availableSeats < 15) {
+                        tvSeats.setTextColor(getColor(R.color.yellow));
+                    } else {
+                        tvSeats.setTextColor(getColor(R.color.green));
+                    }
+                }
+            }
+            
+            // Set button click listener - find button within the card
+            Button btn = null;
+            
+            // Method 1: Find in cardView
+            btn = cardView.findViewById(buttonId);
+            
+            // Method 2: If not found, search in cardLayout
+            if (btn == null && cardLayout != null) {
+                btn = findButtonInLayout(cardLayout, buttonId);
+            }
+            
+            // Method 3: If still not found, try root view
+            if (btn == null) {
+                View rootView = findViewById(android.R.id.content);
+                if (rootView != null) {
+                    btn = rootView.findViewById(buttonId);
+                }
+            }
+            
+            if (btn != null) {
+                // Remove any existing listeners
+                btn.setOnClickListener(null);
+                
+                btn.setOnClickListener(v -> {
+                    try {
+                        android.util.Log.d("SelectBusActivity", "Button clicked for schedule ID: " + scheduleId + ", Route: " + routeNumber);
+                        Intent intent = new Intent(SelectBusActivity.this, ChooseSeatActivity.class);
+                        intent.putExtra("from_location", fromLocation);
+                        intent.putExtra("to_location", toLocation);
+                        intent.putExtra("schedule_id", scheduleId);
+                        intent.putExtra("route_number", routeNumber); // Pass route number instead of company name
+                        intent.putExtra("price", price);
+                        intent.putExtra("departure_time", departureTime);
+                        intent.putExtra("arrival_time", arrivalTime);
+                        intent.putExtra("bus_type", busType);
+                        intent.putExtra("available_seats", availableSeats);
+                        intent.putExtra("schedule_date", selectedDate);
+                        startActivity(intent);
+                    } catch (Exception e) {
+                        android.util.Log.e("SelectBusActivity", "Error starting ChooseSeatActivity: " + e.getMessage(), e);
+                        android.widget.Toast.makeText(this, "Lỗi khi mở màn hình chọn ghế: " + e.getMessage(), android.widget.Toast.LENGTH_SHORT).show();
+                    }
+                });
+                android.util.Log.d("SelectBusActivity", "Button listener set for button ID: " + buttonId);
+            } else {
+                android.util.Log.e("SelectBusActivity", "Button not found with ID: " + buttonId);
+            }
+        } catch (Exception e) {
+            android.util.Log.e("SelectBusActivity", "Error updating bus card: " + e.getMessage(), e);
+            cardView.setVisibility(View.GONE);
+        }
     }
     
     private void updateBusCard(int cardId, int buttonId, Cursor cursor, int position) {
         View cardView = findViewById(cardId);
         if (cardView == null) return;
         
-        if (cursor != null && cursor.getCount() > position && cursor.moveToPosition(position)) {
+        try {
+            if (cursor != null && !cursor.isClosed() && cursor.getCount() > position && cursor.moveToPosition(position)) {
             long scheduleId = cursor.getLong(0);
-            String companyName = cursor.getString(1);
+            int routeNumber = cursor.getInt(1); // Route number instead of company name
             String departureTime = cursor.getString(2);
             String arrivalTime = cursor.getString(3);
             double price = cursor.getDouble(4);
@@ -277,17 +502,35 @@ public class SelectBusActivity extends AppCompatActivity {
             CardView card = (CardView) cardView;
             LinearLayout cardLayout = (LinearLayout) card.getChildAt(0);
             if (cardLayout != null) {
-                // Find TextViews by their position in layout
-                TextView tvCompany = findTextViewInLayout(cardLayout, 0);
-                if (tvCompany != null) {
-                    tvCompany.setText(companyName);
+                // Find the first TextView (route/company name) - it's the first child
+                View firstChild = cardLayout.getChildAt(0);
+                if (firstChild instanceof TextView) {
+                    TextView tvCompany = (TextView) firstChild;
+                    tvCompany.setText("Tuyến số " + routeNumber);
+                    android.util.Log.d("SelectBusActivity", "Updated route name to: Tuyến số " + routeNumber);
+                } else {
+                    // Fallback: try finding by searching through children
+                    TextView tvCompany = findTextViewInLayout(cardLayout, 0);
+                    if (tvCompany != null) {
+                        tvCompany.setText("Tuyến số " + routeNumber);
+                        android.util.Log.d("SelectBusActivity", "Updated route name (fallback) to: Tuyến số " + routeNumber);
+                    } else {
+                        android.util.Log.e("SelectBusActivity", "Could not find TextView for route name in card");
+                    }
+                }
+                
+                // Also try to find TextView by searching all children recursively
+                TextView routeNameView = findTextViewByName(cardLayout, "Perera Travels", "Gayan Express", "Shehan Travels");
+                if (routeNameView != null) {
+                    routeNameView.setText("Tuyến số " + routeNumber);
+                    android.util.Log.d("SelectBusActivity", "Updated route name by text search to: Tuyến số " + routeNumber);
                 }
                 
                 LinearLayout priceLayout = (LinearLayout) cardLayout.getChildAt(1);
                 if (priceLayout != null) {
                     TextView tvPrice = (TextView) priceLayout.getChildAt(0);
                     if (tvPrice != null) {
-                        tvPrice.setText("LKR " + String.format("%.0f", price));
+                        tvPrice.setText(String.format("%.0f", price) + " VNĐ");
                     }
                     TextView tvBusType = (TextView) priceLayout.getChildAt(1);
                     if (tvBusType != null) {
@@ -320,29 +563,60 @@ public class SelectBusActivity extends AppCompatActivity {
                 }
             }
             
-            // Set button click listener
-            Button btn = findViewById(buttonId);
+            // Set button click listener - find button within the card
+            // Try multiple ways to find the button
+            Button btn = null;
+            
+            // Method 1: Find in cardView
+            btn = cardView.findViewById(buttonId);
+            
+            // Method 2: If not found, search in cardLayout
+            if (btn == null && cardLayout != null) {
+                btn = findButtonInLayout(cardLayout, buttonId);
+            }
+            
+            // Method 3: If still not found, try root view
+            if (btn == null) {
+                View rootView = findViewById(android.R.id.content);
+                if (rootView != null) {
+                    btn = rootView.findViewById(buttonId);
+                }
+            }
+            
             if (btn != null) {
+                // Remove any existing listeners
+                btn.setOnClickListener(null);
+                
                 btn.setOnClickListener(v -> {
-                    Intent intent = new Intent(SelectBusActivity.this, ChooseSeatActivity.class);
-                    intent.putExtra("from_location", fromLocation);
-                    intent.putExtra("to_location", toLocation);
-                    intent.putExtra("schedule_id", scheduleId);
-                    intent.putExtra("company_name", companyName);
-                    intent.putExtra("price", price);
-                    intent.putExtra("departure_time", departureTime);
-                    intent.putExtra("arrival_time", arrivalTime);
-                    intent.putExtra("bus_type", busType);
-                    startActivity(intent);
+                    try {
+                        android.util.Log.d("SelectBusActivity", "Button clicked for schedule ID: " + scheduleId + ", Route: " + routeNumber);
+                        Intent intent = new Intent(SelectBusActivity.this, ChooseSeatActivity.class);
+                        intent.putExtra("from_location", fromLocation);
+                        intent.putExtra("to_location", toLocation);
+                        intent.putExtra("schedule_id", scheduleId);
+                        intent.putExtra("route_number", routeNumber); // Pass route number instead of company name
+                        intent.putExtra("price", price);
+                        intent.putExtra("departure_time", departureTime);
+                        intent.putExtra("arrival_time", arrivalTime);
+                        intent.putExtra("bus_type", busType);
+                        intent.putExtra("schedule_date", selectedDate);
+                        startActivity(intent);
+                    } catch (Exception e) {
+                        android.util.Log.e("SelectBusActivity", "Error starting ChooseSeatActivity: " + e.getMessage(), e);
+                        android.widget.Toast.makeText(this, "Lỗi khi mở màn hình chọn ghế: " + e.getMessage(), android.widget.Toast.LENGTH_SHORT).show();
+                    }
                 });
+                android.util.Log.d("SelectBusActivity", "Button listener set for button ID: " + buttonId + " at position " + position);
+            } else {
+                android.util.Log.e("SelectBusActivity", "Button not found with ID: " + buttonId + " at position " + position);
             }
-        } else {
-            // Hide card if no data
+            } else {
+                // Hide card if no data
+                cardView.setVisibility(View.GONE);
+            }
+        } catch (Exception e) {
+            android.util.Log.e("SelectBusActivity", "Error updating bus card at position " + position + ": " + e.getMessage(), e);
             cardView.setVisibility(View.GONE);
-            if (position == 0 && (cursor == null || cursor.getCount() == 0)) {
-                // Show message if no schedules found
-                android.widget.Toast.makeText(this, "No bus schedules found for this route and date.", android.widget.Toast.LENGTH_LONG).show();
-            }
         }
     }
     
@@ -351,6 +625,42 @@ public class SelectBusActivity extends AppCompatActivity {
             View child = layout.getChildAt(index);
             if (child instanceof TextView) {
                 return (TextView) child;
+            }
+        }
+        return null;
+    }
+    
+    private TextView findTextViewByName(ViewGroup parent, String... searchTexts) {
+        if (parent == null) return null;
+        
+        for (int i = 0; i < parent.getChildCount(); i++) {
+            View child = parent.getChildAt(i);
+            if (child instanceof TextView) {
+                TextView tv = (TextView) child;
+                String text = tv.getText().toString();
+                for (String searchText : searchTexts) {
+                    if (text.contains(searchText)) {
+                        return tv;
+                    }
+                }
+            } else if (child instanceof ViewGroup) {
+                TextView found = findTextViewByName((ViewGroup) child, searchTexts);
+                if (found != null) return found;
+            }
+        }
+        return null;
+    }
+    
+    private Button findButtonInLayout(ViewGroup parent, int buttonId) {
+        if (parent == null) return null;
+        
+        for (int i = 0; i < parent.getChildCount(); i++) {
+            View child = parent.getChildAt(i);
+            if (child.getId() == buttonId && child instanceof Button) {
+                return (Button) child;
+            } else if (child instanceof ViewGroup) {
+                Button found = findButtonInLayout((ViewGroup) child, buttonId);
+                if (found != null) return found;
             }
         }
         return null;

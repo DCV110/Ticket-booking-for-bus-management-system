@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="wrap_content"
+    android:layout_height="wrap_content"
+    android:padding="4dp">
+
+    <LinearLayout
+        android:id="@+id/seatPairContainer"
+        android:layout_width="60dp"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:gravity="center"
+        android:padding="8dp"
+        android:background="@drawable/bg_seat_pair_purple">
+
+        <TextView
+            android:id="@+id/tvSeatNumber"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="1"
+            android:textSize="14sp"
+            android:textStyle="bold"
+            android:textColor="@color/purple_dark"
+            android:gravity="center" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center"
+            android:layout_marginTop="4dp">
+
+            <View
+                android:id="@+id/seatLeft"
+                android:layout_width="12dp"
+                android:layout_height="8dp"
+                android:layout_marginEnd="4dp"
+                android:background="@drawable/bg_seat_pair_purple" />
+
+            <View
+                android:id="@+id/seatRight"
+                android:layout_width="12dp"
+                android:layout_height="8dp"
+                android:background="@drawable/bg_seat_pair_purple" />
+
+        </LinearLayout>
+
+    </LinearLayout>
+
+    <View
+        android:id="@+id/selectedIndicator"
+        android:layout_width="76dp"
+        android:layout_height="76dp"
+        android:layout_gravity="center"
+        android:background="@drawable/bg_seat_pair_selected"
+        android:visibility="gone" />
+
+</FrameLayout>
+

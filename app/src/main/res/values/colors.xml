@@ -25,4 +25,10 @@
     <color name="light_pink">#FFF5F5</color>
     <color name="background_light_pink">#FFF5F5</color>
     <color name="red_dark">#D32F2F</color>
+    <!-- Seat colors -->
+    <color name="purple_light">#E1BEE7</color>
+    <color name="purple_dark">#7B1FA2</color>
+    <color name="orange_light">#FFE0B2</color>
+    <color name="orange_dark">#E65100</color>
+    <color name="seat_background_gray">#E0E0E0</color>
 </resources>

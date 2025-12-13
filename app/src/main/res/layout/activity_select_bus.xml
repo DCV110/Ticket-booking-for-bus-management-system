@@ -48,7 +48,7 @@
                     android:id="@+id/tvGreeting"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="Hello Saduni Silva!"
+                    android:text="Xin chào!"
                     android:textSize="18sp"
                     android:textStyle="bold"
                     android:textColor="@color/text_primary" />
@@ -129,7 +129,7 @@
                             android:layout_width="0dp"
                             android:layout_height="wrap_content"
                             android:layout_weight="1"
-                            android:text="Kelaniya"
+                            android:text="Quận 1"
                             android:textSize="18sp"
                             android:textStyle="bold"
                             android:textColor="@color/white"
@@ -151,7 +151,7 @@
                             android:layout_width="0dp"
                             android:layout_height="wrap_content"
                             android:layout_weight="1"
-                            android:text="Colombo"
+                            android:text="Quận 3"
                             android:textSize="18sp"
                             android:textStyle="bold"
                             android:textColor="@color/white"
@@ -163,7 +163,7 @@
                         android:id="@+id/btnDate"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="08th - Dec - 2024 | Sunday"
+                        android:text="08/12/2024 | Chủ nhật"
                         android:textSize="14sp"
                         android:textColor="@color/red"
                         android:background="@drawable/bg_date_button"
@@ -253,7 +253,7 @@
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
-                        android:text="15 Seats left"
+                        android:text="15 Ghế còn lại"
                         android:textSize="14sp"
                         android:textColor="@color/green" />
 
@@ -301,7 +301,7 @@
                     android:id="@+id/btnSelectBus1"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:text="Select"
+                    android:text="Chọn"
                     android:textSize="14sp"
                     android:backgroundTint="@color/primary"
                     android:layout_marginTop="12dp" />
@@ -389,7 +389,7 @@
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
-                        android:text="2 Seats left"
+                        android:text="2 Ghế còn lại"
                         android:textSize="14sp"
                         android:textColor="@color/red" />
 
@@ -525,7 +525,7 @@
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
-                        android:text="5 Seats left"
+                        android:text="5 Ghế còn lại"
                         android:textSize="14sp"
                         android:textColor="@color/yellow" />
 
@@ -602,7 +602,7 @@
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="Company Name"
+                    android:text="Tên hãng xe"
                     android:textSize="18sp"
                     android:textStyle="bold"
                     android:textColor="@color/text_primary" />
@@ -617,7 +617,7 @@
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
-                        android:text="LKR 0"
+                        android:text="0 VNĐ"
                         android:textSize="16sp"
                         android:textStyle="bold"
                         android:textColor="@color/primary" />
@@ -625,7 +625,7 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="Bus Type"
+                        android:text="Loại xe"
                         android:textSize="14sp"
                         android:textColor="@color/text_secondary" />
                 </LinearLayout>
@@ -640,14 +640,14 @@
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
-                        android:text="Duration"
+                        android:text="Thời gian"
                         android:textSize="14sp"
                         android:textColor="@color/text_secondary" />
 
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="Time"
+                        android:text="Giờ"
                         android:textSize="14sp"
                         android:textColor="@color/text_secondary" />
                 </LinearLayout>
@@ -663,7 +663,7 @@
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
-                        android:text="Seats left"
+                        android:text="Ghế còn lại"
                         android:textSize="14sp"
                         android:textColor="@color/green" />
 

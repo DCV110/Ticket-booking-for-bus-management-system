@@ -10,6 +10,7 @@ import android.widget.ArrayAdapter;
 import android.widget.AutoCompleteTextView;
 import android.widget.Button;
 import android.widget.ImageButton;
+import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.appcompat.app.AppCompatActivity;
@@ -47,19 +48,46 @@ public class HomeActivity extends AppCompatActivity {
             // Check if views are found
             if (actvFrom == null || actvTo == null || btnSearch == null || btnSwap == null) {
                 android.util.Log.e("HomeActivity", "Some views are null");
-                android.widget.Toast.makeText(this, "Error loading views. Please restart the app.", android.widget.Toast.LENGTH_LONG).show();
+                android.widget.Toast.makeText(this, "Lỗi tải giao diện. Vui lòng khởi động lại ứng dụng.", android.widget.Toast.LENGTH_LONG).show();
                 finish();
                 return;
+            }
+            
+            // Update greeting with user name
+            android.content.SharedPreferences sharedPreferences = getSharedPreferences("BTMS_PREFS", MODE_PRIVATE);
+            String userEmail = sharedPreferences.getString("user_email", null);
+            String userName = sharedPreferences.getString("user_name", null);
+            
+            // If name not in SharedPreferences, get from database
+            if (userName == null && userEmail != null) {
+                android.content.ContentValues userInfo = dbHelper.getUserInfo(userEmail);
+                if (userInfo != null && userInfo.containsKey("name")) {
+                    userName = userInfo.getAsString("name");
+                    // Save to SharedPreferences for future use
+                    if (userName != null) {
+                        sharedPreferences.edit().putString("user_name", userName).apply();
+                    }
+                }
+            }
+            
+            // Update greeting TextView
+            TextView tvGreeting = findViewById(R.id.tvGreeting);
+            if (tvGreeting != null) {
+                if (userName != null && !userName.isEmpty()) {
+                    tvGreeting.setText("Xin chào " + userName + "!");
+                } else {
+                    tvGreeting.setText("Xin chào!");
+                }
             }
 
             // Get all locations from database
             List<String> locations = dbHelper.getAllLocations();
             if (locations == null || locations.isEmpty()) {
-                // If no locations, use default list
+                // If no locations, use default list of HCMC districts
                 locations = new java.util.ArrayList<>();
-                locations.add("New York, NY");
-                locations.add("Los Angeles, CA");
-                locations.add("Chicago, IL");
+                locations.add("Quận 1");
+                locations.add("Quận 2");
+                locations.add("Quận 3");
             }
             adapter = new ArrayAdapter<>(this,
                     android.R.layout.simple_dropdown_item_1line, locations);
@@ -228,12 +256,12 @@ public class HomeActivity extends AppCompatActivity {
             String to = actvTo.getText().toString().trim();
             
             if (from.isEmpty() || to.isEmpty()) {
-                Toast.makeText(this, "Please select departure and destination locations", Toast.LENGTH_SHORT).show();
+                Toast.makeText(this, "Vui lòng chọn điểm đi và điểm đến", Toast.LENGTH_SHORT).show();
                 return;
             }
             
             if (from.equals(to)) {
-                Toast.makeText(this, "Departure and destination cannot be the same", Toast.LENGTH_SHORT).show();
+                Toast.makeText(this, "Điểm đi và điểm đến không thể giống nhau", Toast.LENGTH_SHORT).show();
                 return;
             }
             
@@ -259,7 +287,7 @@ public class HomeActivity extends AppCompatActivity {
             }
         } catch (Exception e) {
             android.util.Log.e("HomeActivity", "Error in onCreate: " + e.getMessage(), e);
-            android.widget.Toast.makeText(this, "Error loading home screen. Please try again.", android.widget.Toast.LENGTH_LONG).show();
+            android.widget.Toast.makeText(this, "Lỗi tải màn hình chính. Vui lòng thử lại.", android.widget.Toast.LENGTH_LONG).show();
             finish();
         }
     }

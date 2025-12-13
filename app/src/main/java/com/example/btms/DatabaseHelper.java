@@ -12,7 +12,7 @@ import java.util.List;
 public class DatabaseHelper extends SQLiteOpenHelper {
 
     private static final String DATABASE_NAME = "btms.db";
-    private static final int DATABASE_VERSION = 2;
+    private static final int DATABASE_VERSION = 5; // Increment to force database recreation
 
     // Table: users
     private static final String TABLE_USERS = "users";
@@ -40,6 +40,7 @@ public class DatabaseHelper extends SQLiteOpenHelper {
     private static final String COL_ROUTE_TO = "to_location_id";
     private static final String COL_ROUTE_DISTANCE = "distance";
     private static final String COL_ROUTE_DURATION = "duration";
+    private static final String COL_ROUTE_NUMBER = "route_number";
 
     // Table: bus_companies
     private static final String TABLE_BUS_COMPANIES = "bus_companies";
@@ -77,6 +78,20 @@ public class DatabaseHelper extends SQLiteOpenHelper {
 
     public DatabaseHelper(Context context) {
         super(context, DATABASE_NAME, null, DATABASE_VERSION);
+        
+        // Force recreate database on first run after update
+        try {
+            android.content.SharedPreferences prefs = context.getSharedPreferences("BTMS_DB_PREFS", android.content.Context.MODE_PRIVATE);
+            boolean dbRecreated = prefs.getBoolean("db_recreated_v5", false);
+            if (!dbRecreated) {
+                // Delete database file to force recreation
+                context.deleteDatabase(DATABASE_NAME);
+                android.util.Log.d("DatabaseHelper", "Database deleted to force recreation with route numbers");
+                prefs.edit().putBoolean("db_recreated_v5", true).apply();
+            }
+        } catch (Exception e) {
+            android.util.Log.e("DatabaseHelper", "Error checking database recreation: " + e.getMessage());
+        }
     }
 
     @Override
@@ -119,6 +134,7 @@ public class DatabaseHelper extends SQLiteOpenHelper {
                 + COL_ROUTE_TO + " INTEGER NOT NULL,"
                 + COL_ROUTE_DISTANCE + " REAL,"
                 + COL_ROUTE_DURATION + " INTEGER,"
+                + COL_ROUTE_NUMBER + " INTEGER,"
                 + "FOREIGN KEY(" + COL_ROUTE_FROM + ") REFERENCES " + TABLE_LOCATIONS + "(" + COL_LOCATION_ID + "),"
                 + "FOREIGN KEY(" + COL_ROUTE_TO + ") REFERENCES " + TABLE_LOCATIONS + "(" + COL_LOCATION_ID + ")"
                 + ")";
@@ -180,37 +196,78 @@ public class DatabaseHelper extends SQLiteOpenHelper {
                     + ")";
             db.execSQL(createUsersTable);
         }
+        
+        if (oldVersion < 3) {
+            // Clear old locations and insert HCMC districts
+            db.execSQL("DELETE FROM " + TABLE_LOCATIONS);
+            db.execSQL("DELETE FROM " + TABLE_BUS_ROUTES);
+            db.execSQL("DELETE FROM " + TABLE_BUS_SCHEDULES);
+            
+            // Add route_number column if it doesn't exist
+            try {
+                db.execSQL("ALTER TABLE " + TABLE_BUS_ROUTES + " ADD COLUMN " + COL_ROUTE_NUMBER + " INTEGER");
+            } catch (Exception e) {
+                // Column might already exist, ignore
+            }
+            
+            // Insert Ho Chi Minh City districts
+            String[] hcmcDistricts = {
+                    "Quận 1", "Quận 2", "Quận 3", "Quận 4", "Quận 5", "Quận 6",
+                    "Quận 7", "Quận 8", "Quận 9", "Quận 10", "Quận 11", "Quận 12",
+                    "Bình Thạnh", "Tân Bình", "Tân Phú", "Phú Nhuận", "Gò Vấp", "Bình Tân", "Thủ Đức"
+            };
+
+            ContentValues locationValues = new ContentValues();
+            for (String district : hcmcDistricts) {
+                locationValues.clear();
+                locationValues.put(COL_LOCATION_NAME, district);
+                locationValues.put(COL_LOCATION_STATE, "TP. Hồ Chí Minh");
+                locationValues.put(COL_LOCATION_TYPE, "district");
+                db.insert(TABLE_LOCATIONS, null, locationValues);
+            }
+            
+            // Recreate routes between HCMC districts
+            insertSampleRoutes(db);
+        }
+        
+        if (oldVersion < 4) {
+            // Force recreate all routes and schedules to ensure route_number is set correctly
+            android.util.Log.d("DatabaseHelper", "Upgrading to version 4: Recreating routes with route numbers");
+            db.execSQL("DELETE FROM " + TABLE_BUS_ROUTES);
+            db.execSQL("DELETE FROM " + TABLE_BUS_SCHEDULES);
+            insertSampleRoutes(db);
+        }
+        
+        if (oldVersion < 5) {
+            // Force recreate all routes and schedules again to ensure route_number is set correctly
+            android.util.Log.d("DatabaseHelper", "Upgrading to version 5: Recreating routes with route numbers");
+            db.execSQL("DELETE FROM " + TABLE_BUS_ROUTES);
+            db.execSQL("DELETE FROM " + TABLE_BUS_SCHEDULES);
+            insertSampleRoutes(db);
+        }
     }
 
     private void insertInitialData(SQLiteDatabase db) {
-        // Insert USA locations
-        String[] usaCities = {
-                "New York, NY", "Los Angeles, CA", "Chicago, IL", "Houston, TX",
-                "Phoenix, AZ", "Philadelphia, PA", "San Antonio, TX", "San Diego, CA",
-                "Dallas, TX", "San Jose, CA", "Austin, TX", "Jacksonville, FL",
-                "Fort Worth, TX", "Columbus, OH", "Charlotte, NC", "San Francisco, CA",
-                "Indianapolis, IN", "Seattle, WA", "Denver, CO", "Washington, DC",
-                "Boston, MA", "El Paso, TX", "Nashville, TN", "Detroit, MI",
-                "Oklahoma City, OK", "Portland, OR", "Las Vegas, NV", "Memphis, TN",
-                "Louisville, KY", "Baltimore, MD", "Milwaukee, WI", "Albuquerque, NM",
-                "Tucson, AZ", "Fresno, CA", "Sacramento, CA", "Kansas City, MO",
-                "Mesa, AZ", "Atlanta, GA", "Omaha, NE", "Raleigh, NC"
+        // Insert Ho Chi Minh City districts
+        String[] hcmcDistricts = {
+                "Quận 1", "Quận 2", "Quận 3", "Quận 4", "Quận 5", "Quận 6",
+                "Quận 7", "Quận 8", "Quận 9", "Quận 10", "Quận 11", "Quận 12",
+                "Bình Thạnh", "Tân Bình", "Tân Phú", "Phú Nhuận", "Gò Vấp", "Bình Tân", "Thủ Đức"
         };
 
         ContentValues locationValues = new ContentValues();
-        for (String city : usaCities) {
-            String[] parts = city.split(", ");
+        for (String district : hcmcDistricts) {
             locationValues.clear();
-            locationValues.put(COL_LOCATION_NAME, parts[0]);
-            locationValues.put(COL_LOCATION_STATE, parts.length > 1 ? parts[1] : "");
-            locationValues.put(COL_LOCATION_TYPE, "city");
+            locationValues.put(COL_LOCATION_NAME, district);
+            locationValues.put(COL_LOCATION_STATE, "TP. Hồ Chí Minh");
+            locationValues.put(COL_LOCATION_TYPE, "district");
             db.insert(TABLE_LOCATIONS, null, locationValues);
         }
 
         // Insert bus companies
         String[] companies = {
-                "Greyhound Lines", "Megabus", "Peter Pan Bus Lines", "BoltBus",
-                "FlixBus", "RedCoach", "Jefferson Lines", "Trailways"
+                "EASYBUS", "Hoàng Long", "Mai Linh", "Thành Bưởi",
+                "Xe Khách Miền Tây", "Xe Khách Miền Đông", "Xe Khách Sài Gòn", "Phương Trang"
         };
 
         ContentValues companyValues = new ContentValues();
@@ -258,27 +315,52 @@ public class DatabaseHelper extends SQLiteOpenHelper {
     }
 
     private void insertSampleRoutes(SQLiteDatabase db) {
-        // Get location IDs for major cities
-        long nyId = getLocationId(db, "New York");
-        long laId = getLocationId(db, "Los Angeles");
-        long chiId = getLocationId(db, "Chicago");
-        long houId = getLocationId(db, "Houston");
-        long phxId = getLocationId(db, "Phoenix");
-        long phiId = getLocationId(db, "Philadelphia");
-        long bosId = getLocationId(db, "Boston");
-        long wasId = getLocationId(db, "Washington");
-        long atlId = getLocationId(db, "Atlanta");
-        long seaId = getLocationId(db, "Seattle");
+        // Get location IDs for major districts in Ho Chi Minh City
+        long q1Id = getLocationId(db, "Quận 1");
+        long q2Id = getLocationId(db, "Quận 2");
+        long q3Id = getLocationId(db, "Quận 3");
+        long q4Id = getLocationId(db, "Quận 4");
+        long q5Id = getLocationId(db, "Quận 5");
+        long q6Id = getLocationId(db, "Quận 6");
+        long q7Id = getLocationId(db, "Quận 7");
+        long q8Id = getLocationId(db, "Quận 8");
+        long q9Id = getLocationId(db, "Quận 9");
+        long q10Id = getLocationId(db, "Quận 10");
+        long q11Id = getLocationId(db, "Quận 11");
+        long q12Id = getLocationId(db, "Quận 12");
+        long binhThanhId = getLocationId(db, "Bình Thạnh");
+        long tanBinhId = getLocationId(db, "Tân Bình");
+        long tanPhuId = getLocationId(db, "Tân Phú");
+        long goVapId = getLocationId(db, "Gò Vấp");
+        long thuDucId = getLocationId(db, "Thủ Đức");
 
-        // Insert routes
-        insertRoute(db, nyId, bosId, 215, 240); // New York to Boston
-        insertRoute(db, nyId, phiId, 95, 120); // New York to Philadelphia
-        insertRoute(db, nyId, wasId, 225, 270); // New York to Washington
-        insertRoute(db, nyId, chiId, 790, 960); // New York to Chicago
-        insertRoute(db, chiId, laId, 2015, 2520); // Chicago to Los Angeles
-        insertRoute(db, laId, seaId, 1135, 1320); // Los Angeles to Seattle
-        insertRoute(db, houId, atlId, 800, 960); // Houston to Atlanta
-        insertRoute(db, phxId, laId, 375, 420); // Phoenix to Los Angeles
+        // Insert routes between districts with route numbers
+        // Each route from A to B can have multiple route numbers (e.g., route 5, 12, 16)
+        // For simplicity, we'll assign sequential route numbers
+        int routeNumber = 1;
+        insertRouteWithNumber(db, q1Id, q3Id, 3.5, 15, routeNumber++); // Tuyến 1: Quận 1 to Quận 3
+        insertRouteWithNumber(db, q1Id, q3Id, 3.5, 15, routeNumber++); // Tuyến 2: Quận 1 to Quận 3 (alternative)
+        insertRouteWithNumber(db, q1Id, q4Id, 2.0, 10, routeNumber++); // Tuyến 3: Quận 1 to Quận 4
+        insertRouteWithNumber(db, q1Id, q5Id, 4.0, 20, routeNumber++); // Tuyến 4: Quận 1 to Quận 5
+        insertRouteWithNumber(db, q1Id, q5Id, 4.0, 20, routeNumber++); // Tuyến 5: Quận 1 to Quận 5 (alternative)
+        insertRouteWithNumber(db, q1Id, binhThanhId, 5.0, 25, routeNumber++); // Tuyến 6: Quận 1 to Bình Thạnh
+        insertRouteWithNumber(db, q1Id, q2Id, 8.0, 35, routeNumber++); // Tuyến 7: Quận 1 to Quận 2
+        insertRouteWithNumber(db, q1Id, q2Id, 8.0, 35, routeNumber++); // Tuyến 8: Quận 1 to Quận 2 (alternative)
+        insertRouteWithNumber(db, q1Id, q7Id, 12.0, 45, routeNumber++); // Tuyến 9: Quận 1 to Quận 7
+        insertRouteWithNumber(db, q3Id, tanBinhId, 6.0, 25, routeNumber++); // Tuyến 10: Quận 3 to Tân Bình
+        insertRouteWithNumber(db, q3Id, q10Id, 4.5, 20, routeNumber++); // Tuyến 11: Quận 3 to Quận 10
+        insertRouteWithNumber(db, q3Id, q10Id, 4.5, 20, routeNumber++); // Tuyến 12: Quận 3 to Quận 10 (alternative)
+        insertRouteWithNumber(db, q5Id, q6Id, 3.0, 15, routeNumber++); // Tuyến 13: Quận 5 to Quận 6
+        insertRouteWithNumber(db, q5Id, q8Id, 5.0, 20, routeNumber++); // Tuyến 14: Quận 5 to Quận 8
+        insertRouteWithNumber(db, q5Id, q8Id, 5.0, 20, routeNumber++); // Tuyến 15: Quận 5 to Quận 8 (alternative)
+        insertRouteWithNumber(db, q5Id, q8Id, 5.0, 20, routeNumber++); // Tuyến 16: Quận 5 to Quận 8 (alternative)
+        insertRouteWithNumber(db, tanBinhId, tanPhuId, 7.0, 30, routeNumber++); // Tuyến 17: Tân Bình to Tân Phú
+        insertRouteWithNumber(db, tanBinhId, goVapId, 5.5, 25, routeNumber++); // Tuyến 18: Tân Bình to Gò Vấp
+        insertRouteWithNumber(db, binhThanhId, thuDucId, 10.0, 40, routeNumber++); // Tuyến 19: Bình Thạnh to Thủ Đức
+        insertRouteWithNumber(db, q2Id, q9Id, 8.0, 35, routeNumber++); // Tuyến 20: Quận 2 to Quận 9
+        insertRouteWithNumber(db, q7Id, q8Id, 6.0, 25, routeNumber++); // Tuyến 21: Quận 7 to Quận 8
+        insertRouteWithNumber(db, q12Id, goVapId, 8.0, 35, routeNumber++); // Tuyến 22: Quận 12 to Gò Vấp
+        insertRouteWithNumber(db, q10Id, q11Id, 3.5, 15, routeNumber++); // Tuyến 23: Quận 10 to Quận 11
     }
 
     private void insertRoute(SQLiteDatabase db, long fromId, long toId, double distance, int duration) {
@@ -287,10 +369,25 @@ public class DatabaseHelper extends SQLiteOpenHelper {
         values.put(COL_ROUTE_TO, toId);
         values.put(COL_ROUTE_DISTANCE, distance);
         values.put(COL_ROUTE_DURATION, duration);
+        // Route number will be set to route ID after insertion
+        long routeId = db.insert(TABLE_BUS_ROUTES, null, values);
+        // Update route number to be the same as route ID
+        ContentValues updateValues = new ContentValues();
+        updateValues.put(COL_ROUTE_NUMBER, (int)routeId);
+        db.update(TABLE_BUS_ROUTES, updateValues, COL_ROUTE_ID + " = ?", new String[]{String.valueOf(routeId)});
+    }
+    
+    private void insertRouteWithNumber(SQLiteDatabase db, long fromId, long toId, double distance, int duration, int routeNumber) {
+        ContentValues values = new ContentValues();
+        values.put(COL_ROUTE_FROM, fromId);
+        values.put(COL_ROUTE_TO, toId);
+        values.put(COL_ROUTE_DISTANCE, distance);
+        values.put(COL_ROUTE_DURATION, duration);
+        values.put(COL_ROUTE_NUMBER, routeNumber);
         db.insert(TABLE_BUS_ROUTES, null, values);
     }
 
-    // Get all locations
+    // Get all locations (only district names, without state for cleaner UI)
     public List<String> getAllLocations() {
         List<String> locations = new ArrayList<>();
         try {
@@ -300,7 +397,7 @@ public class DatabaseHelper extends SQLiteOpenHelper {
             }
             
             Cursor cursor = db.query(TABLE_LOCATIONS,
-                    new String[]{COL_LOCATION_NAME, COL_LOCATION_STATE},
+                    new String[]{COL_LOCATION_NAME},
                     null, null, null, null,
                     COL_LOCATION_NAME + " ASC");
 
@@ -308,8 +405,9 @@ public class DatabaseHelper extends SQLiteOpenHelper {
                 if (cursor.moveToFirst()) {
                     do {
                         String name = cursor.getString(0);
-                        String state = cursor.getString(1);
-                        locations.add(name + (state != null && !state.isEmpty() ? ", " + state : ""));
+                        if (name != null && !name.isEmpty()) {
+                            locations.add(name);
+                        }
                     } while (cursor.moveToNext());
                 }
                 cursor.close();
@@ -321,7 +419,7 @@ public class DatabaseHelper extends SQLiteOpenHelper {
         return locations;
     }
 
-    // Get locations by name (for search)
+    // Get locations by name (for search) - only district names
     public List<String> searchLocations(String query) {
         List<String> locations = new ArrayList<>();
         try {
@@ -335,9 +433,9 @@ public class DatabaseHelper extends SQLiteOpenHelper {
             }
             
             Cursor cursor = db.query(TABLE_LOCATIONS,
-                    new String[]{COL_LOCATION_NAME, COL_LOCATION_STATE},
-                    COL_LOCATION_NAME + " LIKE ? OR " + COL_LOCATION_STATE + " LIKE ?",
-                    new String[]{"%" + query + "%", "%" + query + "%"},
+                    new String[]{COL_LOCATION_NAME},
+                    COL_LOCATION_NAME + " LIKE ?",
+                    new String[]{"%" + query + "%"},
                     null, null,
                     COL_LOCATION_NAME + " ASC");
 
@@ -345,8 +443,9 @@ public class DatabaseHelper extends SQLiteOpenHelper {
                 if (cursor.moveToFirst()) {
                     do {
                         String name = cursor.getString(0);
-                        String state = cursor.getString(1);
-                        locations.add(name + (state != null && !state.isEmpty() ? ", " + state : ""));
+                        if (name != null && !name.isEmpty()) {
+                            locations.add(name);
+                        }
                     } while (cursor.moveToNext());
                 }
                 cursor.close();
@@ -428,14 +527,16 @@ public class DatabaseHelper extends SQLiteOpenHelper {
             return -1;
         }
         
-        // Check if route already exists
+        // Check if routes already exist for this pair
         Cursor cursor = db.query(TABLE_BUS_ROUTES,
                 new String[]{COL_ROUTE_ID},
                 COL_ROUTE_FROM + " = ? AND " + COL_ROUTE_TO + " = ?",
                 new String[]{String.valueOf(fromId), String.valueOf(toId)},
                 null, null, null);
         
-        if (cursor.moveToFirst()) {
+        if (cursor.getCount() > 0) {
+            // Routes already exist, return the first one
+            cursor.moveToFirst();
             long routeId = cursor.getLong(0);
             cursor.close();
             db.close();
@@ -443,37 +544,148 @@ public class DatabaseHelper extends SQLiteOpenHelper {
         }
         cursor.close();
         
-        // Create new route with estimated distance and duration
-        // Estimate: average 60 mph, calculate distance based on city names or use default
-        double estimatedDistance = 500.0; // Default 500 miles
-        int estimatedDuration = 480; // Default 8 hours (in minutes)
+        // Estimate distance and duration (simple calculation for HCMC districts)
+        double estimatedDistance = 5.0; // Default 5km for HCMC districts
+        int estimatedDuration = 20; // Default 20 minutes
         
-        // Try to calculate based on known routes or use defaults
-        ContentValues values = new ContentValues();
-        values.put(COL_ROUTE_FROM, fromId);
-        values.put(COL_ROUTE_TO, toId);
-        values.put(COL_ROUTE_DISTANCE, estimatedDistance);
-        values.put(COL_ROUTE_DURATION, estimatedDuration);
+        // Get next route number (max route number + 1)
+        Cursor maxRouteCursor = db.rawQuery("SELECT MAX(" + COL_ROUTE_NUMBER + ") FROM " + TABLE_BUS_ROUTES, null);
+        int nextRouteNumber = 1;
+        if (maxRouteCursor.moveToFirst() && !maxRouteCursor.isNull(0)) {
+            nextRouteNumber = maxRouteCursor.getInt(0) + 1;
+        }
+        maxRouteCursor.close();
         
-        long routeId = db.insert(TABLE_BUS_ROUTES, null, values);
+        // Get all existing route numbers to avoid duplicates
+        java.util.Set<Integer> existingRouteNumbers = new java.util.HashSet<>();
+        Cursor existingRoutesCursor = db.query(TABLE_BUS_ROUTES, 
+                new String[]{COL_ROUTE_NUMBER}, 
+                null, null, null, null, null);
+        while (existingRoutesCursor.moveToNext()) {
+            int routeNum = existingRoutesCursor.getInt(0);
+            existingRouteNumbers.add(routeNum);
+        }
+        existingRoutesCursor.close();
+        
+        // Create 3-5 random routes for the same A-B pair with different route numbers
+        // This simulates having multiple bus lines (tuyến) for the same route
+        int numRoutes = 3 + (int)(Math.random() * 3); // 3 to 5 routes
+        long firstRouteId = -1;
+        int currentRouteNumber = nextRouteNumber;
+        
+        for (int i = 0; i < numRoutes; i++) {
+            // Find next available route number (skip if already exists)
+            while (existingRouteNumbers.contains(currentRouteNumber)) {
+                currentRouteNumber++;
+            }
+            
+            ContentValues values = new ContentValues();
+            values.put(COL_ROUTE_FROM, fromId);
+            values.put(COL_ROUTE_TO, toId);
+            values.put(COL_ROUTE_DISTANCE, estimatedDistance + (Math.random() * 2)); // Slight variation
+            values.put(COL_ROUTE_DURATION, estimatedDuration + (int)(Math.random() * 10)); // Slight variation
+            values.put(COL_ROUTE_NUMBER, currentRouteNumber);
+            
+            long routeId = db.insert(TABLE_BUS_ROUTES, null, values);
+            existingRouteNumbers.add(currentRouteNumber); // Add to set to avoid duplicates in same batch
+            currentRouteNumber++; // Move to next number
+            
+            if (i == 0) {
+                firstRouteId = routeId;
+            }
+            android.util.Log.d("DatabaseHelper", "Created route " + (i + 1) + "/" + numRoutes + " from " + fromCity + " to " + toCity + " with ID: " + routeId + ", Route Number: " + (currentRouteNumber - 1));
+        }
+        
         db.close();
+        return firstRouteId;
+    }
+    
+    // Get all route IDs for a from-to pair
+    public java.util.List<Long> getAllRouteIdsForPair(String fromLocation, String toLocation) {
+        java.util.List<Long> routeIds = new java.util.ArrayList<>();
+        SQLiteDatabase db = this.getReadableDatabase();
         
-        android.util.Log.d("DatabaseHelper", "Created new route from " + fromCity + " to " + toCity + " with ID: " + routeId);
-        return routeId;
+        try {
+            String fromCity = fromLocation.split(",")[0].trim();
+            String toCity = toLocation.split(",")[0].trim();
+            
+            long fromId = getLocationId(db, fromCity);
+            long toId = getLocationId(db, toCity);
+            
+            if (fromId == -1 || toId == -1) {
+                db.close();
+                return routeIds;
+            }
+            
+            Cursor cursor = db.query(TABLE_BUS_ROUTES,
+                    new String[]{COL_ROUTE_ID},
+                    COL_ROUTE_FROM + " = ? AND " + COL_ROUTE_TO + " = ?",
+                    new String[]{String.valueOf(fromId), String.valueOf(toId)},
+                    null, null, COL_ROUTE_NUMBER + " ASC");
+            
+            while (cursor.moveToNext()) {
+                routeIds.add(cursor.getLong(0));
+            }
+            cursor.close();
+        } catch (Exception e) {
+            android.util.Log.e("DatabaseHelper", "Error getting route IDs: " + e.getMessage(), e);
+        } finally {
+            db.close();
+        }
+        
+        return routeIds;
     }
 
-    // Get schedules for a route
+    // Get schedules for a route - returns route_number instead of company_name
     public Cursor getSchedulesForRoute(long routeId, String date) {
         SQLiteDatabase db = this.getReadableDatabase();
-        String query = "SELECT s." + COL_SCHEDULE_ID + ", c." + COL_COMPANY_NAME + ", " +
+        String query = "SELECT s." + COL_SCHEDULE_ID + ", r." + COL_ROUTE_NUMBER + ", " +
                 "s." + COL_SCHEDULE_DEPARTURE_TIME + ", s." + COL_SCHEDULE_ARRIVAL_TIME + ", " +
                 "s." + COL_SCHEDULE_PRICE + ", s." + COL_SCHEDULE_BUS_TYPE + ", " +
                 "s." + COL_SCHEDULE_AVAILABLE_SEATS + ", s." + COL_SCHEDULE_TOTAL_SEATS +
                 " FROM " + TABLE_BUS_SCHEDULES + " s " +
-                "INNER JOIN " + TABLE_BUS_COMPANIES + " c ON s." + COL_SCHEDULE_COMPANY_ID + " = c." + COL_COMPANY_ID +
+                "INNER JOIN " + TABLE_BUS_ROUTES + " r ON s." + COL_SCHEDULE_ROUTE_ID + " = r." + COL_ROUTE_ID +
                 " WHERE s." + COL_SCHEDULE_ROUTE_ID + " = ? AND s." + COL_SCHEDULE_DATE + " = ? " +
-                "ORDER BY s." + COL_SCHEDULE_DEPARTURE_TIME + " ASC";
+                "ORDER BY r." + COL_ROUTE_NUMBER + " ASC, s." + COL_SCHEDULE_DEPARTURE_TIME + " ASC";
         return db.rawQuery(query, new String[]{String.valueOf(routeId), date});
+    }
+    
+    // Get all schedules for routes from A to B (returns all routes with different route numbers)
+    public Cursor getSchedulesForRouteByLocations(String fromLocation, String toLocation, String date) {
+        SQLiteDatabase db = this.getReadableDatabase();
+        
+        try {
+            // Get location IDs
+            String fromCity = fromLocation.split(",")[0].trim();
+            String toCity = toLocation.split(",")[0].trim();
+            
+            long fromId = getLocationId(db, fromCity);
+            long toId = getLocationId(db, toCity);
+            
+            android.util.Log.d("DatabaseHelper", "getSchedulesForRouteByLocations: fromCity=" + fromCity + " (id=" + fromId + "), toCity=" + toCity + " (id=" + toId + "), date=" + date);
+            
+            if (fromId == -1 || toId == -1) {
+                android.util.Log.e("DatabaseHelper", "Location not found: fromId=" + fromId + ", toId=" + toId);
+                // Don't close db here, return null cursor
+                return null;
+            }
+            
+            String query = "SELECT s." + COL_SCHEDULE_ID + ", r." + COL_ROUTE_NUMBER + ", " +
+                    "s." + COL_SCHEDULE_DEPARTURE_TIME + ", s." + COL_SCHEDULE_ARRIVAL_TIME + ", " +
+                    "s." + COL_SCHEDULE_PRICE + ", s." + COL_SCHEDULE_BUS_TYPE + ", " +
+                    "s." + COL_SCHEDULE_AVAILABLE_SEATS + ", s." + COL_SCHEDULE_TOTAL_SEATS + ", " +
+                    "s." + COL_SCHEDULE_ROUTE_ID +
+                    " FROM " + TABLE_BUS_SCHEDULES + " s " +
+                    "INNER JOIN " + TABLE_BUS_ROUTES + " r ON s." + COL_SCHEDULE_ROUTE_ID + " = r." + COL_ROUTE_ID +
+                    " WHERE r." + COL_ROUTE_FROM + " = ? AND r." + COL_ROUTE_TO + " = ? AND s." + COL_SCHEDULE_DATE + " = ? " +
+                    "ORDER BY r." + COL_ROUTE_NUMBER + " ASC, s." + COL_SCHEDULE_DEPARTURE_TIME + " ASC";
+            Cursor cursor = db.rawQuery(query, new String[]{String.valueOf(fromId), String.valueOf(toId), date});
+            // Note: Don't close db here, cursor needs the database to be open
+            return cursor;
+        } catch (Exception e) {
+            android.util.Log.e("DatabaseHelper", "Error in getSchedulesForRouteByLocations: " + e.getMessage(), e);
+            return null;
+        }
     }
 
     // Insert sample schedules for routes
@@ -528,11 +740,15 @@ public class DatabaseHelper extends SQLiteOpenHelper {
                 };
                 double[] basePrices = {50.0, 65.0, 45.0, 55.0, 80.0, 40.0, 90.0, 35.0};
                 
-                // Create 8 schedules with different times: 6 AM, 8 AM, 10 AM, 12 PM, 2 PM, 4 PM, 6 PM, 8 PM
-                int[] departureHours = {6, 8, 10, 12, 14, 16, 18, 20};
-                int[] minutes = {0, 15, 30, 0, 15, 30, 0, 15}; // Add some minute variation
+                // Create 2-3 schedules per route to have variety across multiple routes
+                // Different routes will have different times
+                int numSchedules = 2 + (int)(Math.random() * 2); // 2 to 3 schedules per route
                 
-                for (int i = 0; i < 8; i++) {
+                // Generate random departure times for this route
+                int baseHour = 6 + (int)(Math.random() * 14); // Random hour between 6 AM and 8 PM
+                int baseMinute = (int)(Math.random() * 4) * 15; // 0, 15, 30, or 45
+                
+                for (int i = 0; i < numSchedules; i++) {
                     ContentValues values = new ContentValues();
                     values.put(COL_SCHEDULE_ROUTE_ID, routeId);
                     
@@ -544,13 +760,25 @@ public class DatabaseHelper extends SQLiteOpenHelper {
                     long currentCompanyId = companyCursor.getLong(0);
                     values.put(COL_SCHEDULE_COMPANY_ID, currentCompanyId);
                     
-                    // Generate different departure times throughout the day
-                    int hour = departureHours[i % departureHours.length];
-                    int minute = minutes[i % minutes.length];
-                    int arrivalHour = hour + 2; // 2 hour journey
-                    int arrivalMinute = minute;
-                    if (arrivalHour >= 24) {
-                        arrivalHour = arrivalHour % 24;
+                    // Generate different departure times for this schedule
+                    // Spread schedules throughout the day for this route
+                    int hour = baseHour + (i * 2); // Add 2 hours between each schedule
+                    if (hour >= 24) {
+                        hour = hour % 24;
+                    }
+                    int minute = baseMinute + (i * 15); // Add 15 minutes variation
+                    if (minute >= 60) {
+                        minute = minute % 60;
+                        hour = (hour + 1) % 24;
+                    }
+                    
+                    // Calculate arrival time (journey duration varies by route)
+                    int journeyDuration = 20 + (int)(Math.random() * 40); // 20-60 minutes
+                    int arrivalHour = hour;
+                    int arrivalMinute = minute + journeyDuration;
+                    if (arrivalMinute >= 60) {
+                        arrivalMinute = arrivalMinute % 60;
+                        arrivalHour = (arrivalHour + 1) % 24;
                     }
                     
                     String departureTime = String.format("%02d:%02d", hour, minute);
@@ -623,8 +851,313 @@ public class DatabaseHelper extends SQLiteOpenHelper {
                 "ORDER BY b." + COL_BOOKING_BOOKING_DATE + " DESC";
         return db.rawQuery(query, new String[]{userEmail});
     }
+    
+    // Get detailed bookings for user with all journey information
+    public Cursor getUserBookingsWithDetails(String userEmail) {
+        SQLiteDatabase db = this.getReadableDatabase();
+        try {
+            String query = "SELECT " +
+                    "b." + COL_BOOKING_ID + " as booking_id, " +
+                    "b." + COL_BOOKING_SCHEDULE_ID + " as schedule_id, " +
+                    "b." + COL_BOOKING_STATUS + " as status, " +
+                    "b." + COL_BOOKING_TOTAL_FARE + " as total_fare, " +
+                    "s." + COL_SCHEDULE_DEPARTURE_TIME + " as departure_time, " +
+                    "s." + COL_SCHEDULE_ARRIVAL_TIME + " as arrival_time, " +
+                    "s." + COL_SCHEDULE_DATE + " as date, " +
+                    "b." + COL_BOOKING_BOARDING_POINT + " as boarding_point, " +
+                    "b." + COL_BOOKING_DROP_POINT + " as drop_point, " +
+                    "b." + COL_BOOKING_SEAT_NUMBERS + " as seat_numbers, " +
+                    "COALESCE(c." + COL_COMPANY_NAME + ", 'EASYBUS') as company_name, " +
+                    "l1." + COL_LOCATION_NAME + " as from_location, " +
+                    "l2." + COL_LOCATION_NAME + " as to_location " +
+                    "FROM " + TABLE_BOOKINGS + " b " +
+                    "INNER JOIN " + TABLE_BUS_SCHEDULES + " s ON b." + COL_BOOKING_SCHEDULE_ID + " = s." + COL_SCHEDULE_ID + " " +
+                    "INNER JOIN " + TABLE_BUS_ROUTES + " r ON s." + COL_SCHEDULE_ROUTE_ID + " = r." + COL_ROUTE_ID + " " +
+                    "INNER JOIN " + TABLE_LOCATIONS + " l1 ON r." + COL_ROUTE_FROM + " = l1." + COL_LOCATION_ID + " " +
+                    "INNER JOIN " + TABLE_LOCATIONS + " l2 ON r." + COL_ROUTE_TO + " = l2." + COL_LOCATION_ID + " " +
+                    "LEFT JOIN " + TABLE_BUS_COMPANIES + " c ON s." + COL_SCHEDULE_COMPANY_ID + " = c." + COL_COMPANY_ID + " " +
+                    "WHERE b." + COL_BOOKING_USER_EMAIL + " = ? " +
+                    "ORDER BY s." + COL_SCHEDULE_DATE + " ASC, s." + COL_SCHEDULE_DEPARTURE_TIME + " ASC";
+            android.util.Log.d("DatabaseHelper", "Executing getUserBookingsWithDetails for: " + userEmail);
+            Cursor cursor = db.rawQuery(query, new String[]{userEmail});
+            android.util.Log.d("DatabaseHelper", "Query returned " + (cursor != null ? cursor.getCount() : 0) + " rows");
+            return cursor;
+        } catch (Exception e) {
+            android.util.Log.e("DatabaseHelper", "Error in getUserBookingsWithDetails: " + e.getMessage(), e);
+            return null;
+        }
+    }
+    
+    // Get all bookings for user (including cancelled) - for history
+    public Cursor getAllUserBookings(String userEmail) {
+        SQLiteDatabase db = this.getReadableDatabase();
+        String query = "SELECT " +
+                "b." + COL_BOOKING_ID + " as booking_id, " +
+                "b." + COL_BOOKING_STATUS + " as status, " +
+                "b." + COL_BOOKING_TOTAL_FARE + " as total_fare, " +
+                "s." + COL_SCHEDULE_DEPARTURE_TIME + ", " +
+                "s." + COL_SCHEDULE_ARRIVAL_TIME + ", " +
+                "s." + COL_SCHEDULE_DATE + ", " +
+                "b." + COL_BOOKING_BOARDING_POINT + ", " +
+                "b." + COL_BOOKING_DROP_POINT + ", " +
+                "b." + COL_BOOKING_SEAT_NUMBERS + ", " +
+                "c." + COL_COMPANY_NAME + ", " +
+                "l1." + COL_LOCATION_NAME + " as from_location, " +
+                "l2." + COL_LOCATION_NAME + " as to_location " +
+                "FROM " + TABLE_BOOKINGS + " b " +
+                "INNER JOIN " + TABLE_BUS_SCHEDULES + " s ON b." + COL_BOOKING_SCHEDULE_ID + " = s." + COL_SCHEDULE_ID + " " +
+                "INNER JOIN " + TABLE_BUS_ROUTES + " r ON s." + COL_SCHEDULE_ROUTE_ID + " = r." + COL_ROUTE_ID + " " +
+                "INNER JOIN " + TABLE_LOCATIONS + " l1 ON r." + COL_ROUTE_FROM + " = l1." + COL_LOCATION_ID + " " +
+                "INNER JOIN " + TABLE_LOCATIONS + " l2 ON r." + COL_ROUTE_TO + " = l2." + COL_LOCATION_ID + " " +
+                "LEFT JOIN " + TABLE_BUS_COMPANIES + " c ON s." + COL_SCHEDULE_COMPANY_ID + " = c." + COL_COMPANY_ID + " " +
+                "WHERE b." + COL_BOOKING_USER_EMAIL + " = ? " +
+                "ORDER BY s." + COL_SCHEDULE_DATE + " DESC, s." + COL_SCHEDULE_DEPARTURE_TIME + " DESC";
+        return db.rawQuery(query, new String[]{userEmail});
+    }
+
+    // Get full booking details by booking ID
+    public Cursor getBookingDetails(long bookingId) {
+        SQLiteDatabase db = this.getReadableDatabase();
+        try {
+            String query = "SELECT " +
+                    "b." + COL_BOOKING_ID + " as booking_id, " +
+                    "b." + COL_BOOKING_SCHEDULE_ID + " as schedule_id, " +
+                    "b." + COL_BOOKING_USER_EMAIL + " as user_email, " +
+                    "b." + COL_BOOKING_PASSENGER_NAME + " as passenger_name, " +
+                    "b." + COL_BOOKING_PASSENGER_AGE + " as passenger_age, " +
+                    "b." + COL_BOOKING_PASSENGER_GENDER + " as passenger_gender, " +
+                    "b." + COL_BOOKING_SEAT_NUMBERS + " as seat_numbers, " +
+                    "b." + COL_BOOKING_BOARDING_POINT + " as boarding_point, " +
+                    "b." + COL_BOOKING_DROP_POINT + " as drop_point, " +
+                    "b." + COL_BOOKING_TOTAL_FARE + " as total_fare, " +
+                    "b." + COL_BOOKING_STATUS + " as status, " +
+                    "b." + COL_BOOKING_BOOKING_DATE + " as booking_date, " +
+                    "s." + COL_SCHEDULE_DEPARTURE_TIME + " as departure_time, " +
+                    "s." + COL_SCHEDULE_ARRIVAL_TIME + " as arrival_time, " +
+                    "s." + COL_SCHEDULE_DATE + " as date, " +
+                    "s." + COL_SCHEDULE_PRICE + " as price, " +
+                    "s." + COL_SCHEDULE_BUS_TYPE + " as bus_type, " +
+                    "COALESCE(c." + COL_COMPANY_NAME + ", 'EASYBUS') as company_name, " +
+                    "l1." + COL_LOCATION_NAME + " as from_location, " +
+                    "l2." + COL_LOCATION_NAME + " as to_location " +
+                    "FROM " + TABLE_BOOKINGS + " b " +
+                    "INNER JOIN " + TABLE_BUS_SCHEDULES + " s ON b." + COL_BOOKING_SCHEDULE_ID + " = s." + COL_SCHEDULE_ID + " " +
+                    "INNER JOIN " + TABLE_BUS_ROUTES + " r ON s." + COL_SCHEDULE_ROUTE_ID + " = r." + COL_ROUTE_ID + " " +
+                    "INNER JOIN " + TABLE_LOCATIONS + " l1 ON r." + COL_ROUTE_FROM + " = l1." + COL_LOCATION_ID + " " +
+                    "INNER JOIN " + TABLE_LOCATIONS + " l2 ON r." + COL_ROUTE_TO + " = l2." + COL_LOCATION_ID + " " +
+                    "LEFT JOIN " + TABLE_BUS_COMPANIES + " c ON s." + COL_SCHEDULE_COMPANY_ID + " = c." + COL_COMPANY_ID + " " +
+                    "WHERE b." + COL_BOOKING_ID + " = ?";
+            android.util.Log.d("DatabaseHelper", "Executing query for booking ID: " + bookingId);
+            Cursor cursor = db.rawQuery(query, new String[]{String.valueOf(bookingId)});
+            android.util.Log.d("DatabaseHelper", "Query returned " + (cursor != null ? cursor.getCount() : 0) + " rows");
+            return cursor;
+        } catch (Exception e) {
+            android.util.Log.e("DatabaseHelper", "Error in getBookingDetails: " + e.getMessage(), e);
+            return null;
+        }
+    }
+
+    // Get schedule details by schedule ID
+    public Cursor getScheduleDetails(long scheduleId) {
+        SQLiteDatabase db = this.getReadableDatabase();
+        String query = "SELECT " +
+                COL_SCHEDULE_ID + ", " +
+                COL_SCHEDULE_DEPARTURE_TIME + ", " +
+                COL_SCHEDULE_ARRIVAL_TIME + ", " +
+                COL_SCHEDULE_DATE + ", " +
+                COL_SCHEDULE_PRICE + ", " +
+                COL_SCHEDULE_BUS_TYPE + " " +
+                "FROM " + TABLE_BUS_SCHEDULES + " " +
+                "WHERE " + COL_SCHEDULE_ID + " = ?";
+        return db.rawQuery(query, new String[]{String.valueOf(scheduleId)});
+    }
+    
+    // Update booking status
+    public boolean updateBookingStatus(long bookingId, String status) {
+        SQLiteDatabase db = this.getWritableDatabase();
+        ContentValues values = new ContentValues();
+        values.put(COL_BOOKING_STATUS, status);
+        
+        int rowsAffected = db.update(TABLE_BOOKINGS, values, 
+                COL_BOOKING_ID + " = ?", 
+                new String[]{String.valueOf(bookingId)});
+        db.close();
+        return rowsAffected > 0;
+    }
+    
+    // Update user information
+    public boolean updateUserInfo(String email, String name, String phone) {
+        SQLiteDatabase db = this.getWritableDatabase();
+        ContentValues values = new ContentValues();
+        if (name != null) {
+            values.put(COL_USER_NAME, name);
+        }
+        if (phone != null) {
+            values.put(COL_USER_PHONE, phone);
+        }
+        
+        int rowsAffected = db.update(TABLE_USERS, values, 
+                COL_USER_EMAIL + " = ?", 
+                new String[]{email});
+        db.close();
+        return rowsAffected > 0;
+    }
+    
+    // Update user password
+    public boolean updateUserPassword(String email, String newPassword) {
+        SQLiteDatabase db = this.getWritableDatabase();
+        ContentValues values = new ContentValues();
+        values.put(COL_USER_PASSWORD, newPassword);
+        
+        int rowsAffected = db.update(TABLE_USERS, values, 
+                COL_USER_EMAIL + " = ?", 
+                new String[]{email});
+        db.close();
+        return rowsAffected > 0;
+    }
 
     // Get terminals/stops for a route
+    // Get street names for a district (for boarding/drop points)
+    public List<String> getStreetsForDistrict(String districtName) {
+        List<String> streets = new ArrayList<>();
+        
+        // Extract district name (remove state if present)
+        String district = districtName.split(",")[0].trim();
+        
+        // Map of districts to their common street names in Ho Chi Minh City
+        java.util.Map<String, String[]> districtStreets = new java.util.HashMap<>();
+        
+        // Quận 1 - Central district with famous streets
+        districtStreets.put("Quận 1", new String[]{
+            "Đường Nguyễn Huệ", "Đường Lê Lợi", "Đường Đồng Khởi", 
+            "Đường Pasteur", "Đường Nam Kỳ Khởi Nghĩa", "Đường Điện Biên Phủ",
+            "Đường Hai Bà Trưng", "Đường Lý Tự Trọng", "Đường Nguyễn Du"
+        });
+        
+        // Quận 2
+        districtStreets.put("Quận 2", new String[]{
+            "Đường Nguyễn Duy Trinh", "Đường Nguyễn Thị Định", "Đường Võ Văn Tần",
+            "Đường Mai Chí Thọ", "Đường Nguyễn Văn Hưởng", "Đường Song Hành"
+        });
+        
+        // Quận 3
+        districtStreets.put("Quận 3", new String[]{
+            "Đường Võ Thị Sáu", "Đường Nguyễn Đình Chiểu", "Đường Lý Chính Thắng",
+            "Đường Cách Mạng Tháng Tám", "Đường Nguyễn Văn Trỗi", "Đường Lê Văn Sỹ"
+        });
+        
+        // Quận 4
+        districtStreets.put("Quận 4", new String[]{
+            "Đường Khánh Hội", "Đường Tôn Thất Thuyết", "Đường Nguyễn Tất Thành",
+            "Đường Hoàng Diệu", "Đường Nguyễn Khoái"
+        });
+        
+        // Quận 5
+        districtStreets.put("Quận 5", new String[]{
+            "Đường Nguyễn Trãi", "Đường Hải Thượng Lãn Ông", "Đường Trần Hưng Đạo",
+            "Đường Châu Văn Liêm", "Đường An Dương Vương"
+        });
+        
+        // Quận 6
+        districtStreets.put("Quận 6", new String[]{
+            "Đường Hậu Giang", "Đường Lê Quang Sung", "Đường Minh Phụng",
+            "Đường Tân Hương", "Đường Hồng Bàng"
+        });
+        
+        // Quận 7
+        districtStreets.put("Quận 7", new String[]{
+            "Đường Nguyễn Thị Thập", "Đường Huỳnh Tấn Phát", "Đường Nguyễn Lương Bằng",
+            "Đường Lê Văn Lương", "Đường Nguyễn Văn Linh"
+        });
+        
+        // Quận 8
+        districtStreets.put("Quận 8", new String[]{
+            "Đường Dương Bá Trạc", "Đường Tạ Quang Bửu", "Đường Phạm Thế Hiển",
+            "Đường Bùi Minh Trực", "Đường Hưng Phú"
+        });
+        
+        // Quận 9
+        districtStreets.put("Quận 9", new String[]{
+            "Đường Đỗ Xuân Hợp", "Đường Lê Văn Việt", "Đường Nguyễn Xiển",
+            "Đường Đỗ Văn Dậy", "Đường Tân Chánh Hiệp"
+        });
+        
+        // Quận 10
+        districtStreets.put("Quận 10", new String[]{
+            "Đường 3 Tháng 2", "Đường Lý Thái Tổ", "Đường Ngô Gia Tự",
+            "Đường Lạc Long Quân", "Đường Hùng Vương"
+        });
+        
+        // Quận 11
+        districtStreets.put("Quận 11", new String[]{
+            "Đường Lạc Long Quân", "Đường Tân Hương", "Đường Lê Đại Hành",
+            "Đường Nguyễn Oanh", "Đường Tân Chánh Hiệp"
+        });
+        
+        // Quận 12
+        districtStreets.put("Quận 12", new String[]{
+            "Đường Tân Thới Hiệp", "Đường Nguyễn Ảnh Thủ", "Đường Tô Ký",
+            "Đường Trường Chinh", "Đường Nguyễn Văn Quá"
+        });
+        
+        // Bình Thạnh
+        districtStreets.put("Bình Thạnh", new String[]{
+            "Đường Xô Viết Nghệ Tĩnh", "Đường Bạch Đằng", "Đường Điện Biên Phủ",
+            "Đường Nguyễn Gia Trí", "Đường Phan Đăng Lưu"
+        });
+        
+        // Tân Bình
+        districtStreets.put("Tân Bình", new String[]{
+            "Đường Cộng Hòa", "Đường Hoàng Văn Thụ", "Đường Trường Chinh",
+            "Đường Tân Sơn Nhì", "Đường Bạch Đằng"
+        });
+        
+        // Tân Phú
+        districtStreets.put("Tân Phú", new String[]{
+            "Đường Tân Hương", "Đường Tân Sơn Nhì", "Đường Lê Trọng Tấn",
+            "Đường Tây Thạnh", "Đường Phú Thọ Hòa"
+        });
+        
+        // Phú Nhuận
+        districtStreets.put("Phú Nhuận", new String[]{
+            "Đường Phan Xích Long", "Đường Hoàng Văn Thụ", "Đường Nguyễn Văn Trỗi",
+            "Đường Phan Đình Phùng", "Đường Nguyễn Kiệm"
+        });
+        
+        // Gò Vấp
+        districtStreets.put("Gò Vấp", new String[]{
+            "Đường Quang Trung", "Đường Nguyễn Oanh", "Đường Phan Văn Trị",
+            "Đường Nguyễn Văn Nghi", "Đường Lê Đức Thọ"
+        });
+        
+        // Bình Tân
+        districtStreets.put("Bình Tân", new String[]{
+            "Đường Tân Hương", "Đường Tân Kỳ Tân Quý", "Đường Bình Long",
+            "Đường Tân Sơn Nhì", "Đường Hương Lộ 2"
+        });
+        
+        // Thủ Đức
+        districtStreets.put("Thủ Đức", new String[]{
+            "Đường Võ Văn Ngân", "Đường Kha Vạn Cân", "Đường Vạn Hạnh",
+            "Đường Lê Văn Việt", "Đường Nguyễn Xiển"
+        });
+        
+        // Get streets for the district
+        String[] districtStreetList = districtStreets.get(district);
+        if (districtStreetList != null) {
+            for (String street : districtStreetList) {
+                streets.add(street);
+            }
+        } else {
+            // Default streets if district not found
+            streets.add("Đường " + district);
+            streets.add("Đường " + district + " 1");
+            streets.add("Đường " + district + " 2");
+        }
+        
+        return streets;
+    }
+    
     public List<String> getTerminalsForRoute(String fromLocation, String toLocation) {
         List<String> terminals = new ArrayList<>();
         SQLiteDatabase db = this.getReadableDatabase();

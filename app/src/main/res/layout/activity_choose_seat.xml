@@ -145,16 +145,145 @@
             app:layout_constraintStart_toStartOf="parent"
             app:layout_constraintEnd_toEndOf="parent">
 
-            <GridLayout
-                android:id="@+id/gridSeats"
+            <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:columnCount="4"
-                android:rowCount="10"
-                android:padding="16dp"
-                android:alignmentMode="alignMargins">
+                android:orientation="horizontal"
+                android:padding="16dp">
 
-            </GridLayout>
+                <!-- Tầng 1 -->
+                <LinearLayout
+                    android:id="@+id/floor1"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical"
+                    android:background="@color/seat_background_gray"
+                    android:padding="12dp"
+                    android:layout_marginEnd="8dp">
+
+                    <LinearLayout
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical"
+                        android:layout_gravity="center_horizontal"
+                        android:layout_marginBottom="12dp">
+
+                        <ImageView
+                            android:layout_width="24dp"
+                            android:layout_height="24dp"
+                            android:src="@drawable/ic_steering_wheel"
+                            android:layout_marginEnd="8dp" />
+
+                        <LinearLayout
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:orientation="vertical">
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="Floor 1"
+                                android:textSize="16sp"
+                                android:textStyle="bold"
+                                android:textColor="@color/text_primary" />
+
+                            <TextView
+                                android:layout_width="wrap_content"
+                                android:layout_height="wrap_content"
+                                android:text="(1st Floor)"
+                                android:textSize="12sp"
+                                android:textColor="@color/text_secondary" />
+
+                        </LinearLayout>
+
+                    </LinearLayout>
+
+                    <GridLayout
+                        android:id="@+id/gridSeatsFloor1"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:columnCount="3"
+                        android:alignmentMode="alignMargins"
+                        android:useDefaultMargins="false">
+
+                    </GridLayout>
+
+                    <LinearLayout
+                        android:id="@+id/lastRowFloor1"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center"
+                        android:layout_marginTop="8dp"
+                        android:visibility="gone">
+
+                    </LinearLayout>
+
+                </LinearLayout>
+
+                <!-- Tầng 2 -->
+                <LinearLayout
+                    android:id="@+id/floor2"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical"
+                    android:background="@color/orange_light"
+                    android:padding="12dp"
+                    android:layout_marginStart="8dp">
+
+                    <LinearLayout
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical"
+                        android:layout_gravity="center_horizontal"
+                        android:layout_marginBottom="12dp">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Floor 2"
+                            android:textSize="16sp"
+                            android:textStyle="bold"
+                            android:textColor="@color/text_primary"
+                            android:gravity="center" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="(2nd Floor)"
+                            android:textSize="12sp"
+                            android:textColor="@color/text_secondary"
+                            android:gravity="center" />
+
+                    </LinearLayout>
+
+                    <GridLayout
+                        android:id="@+id/gridSeatsFloor2"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:columnCount="3"
+                        android:alignmentMode="alignMargins"
+                        android:useDefaultMargins="false">
+
+                    </GridLayout>
+
+                    <LinearLayout
+                        android:id="@+id/lastRowFloor2"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center"
+                        android:layout_marginTop="8dp"
+                        android:visibility="gone">
+
+                    </LinearLayout>
+
+                </LinearLayout>
+
+            </LinearLayout>
         </androidx.cardview.widget.CardView>
 
         <com.google.android.material.textfield.TextInputLayout
