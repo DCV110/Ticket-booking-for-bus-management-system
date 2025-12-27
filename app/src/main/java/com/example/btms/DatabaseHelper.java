@@ -12,7 +12,7 @@ import java.util.List;
 public class DatabaseHelper extends SQLiteOpenHelper {
 
     private static final String DATABASE_NAME = "btms.db";
-    private static final int DATABASE_VERSION = 5; // Increment to force database recreation
+    private static final int DATABASE_VERSION = 11; // Added wallet tables
 
     // Table: users
     private static final String TABLE_USERS = "users";
@@ -30,6 +30,7 @@ public class DatabaseHelper extends SQLiteOpenHelper {
     private static final String TABLE_LOCATIONS = "locations";
     private static final String COL_LOCATION_ID = "id";
     private static final String COL_LOCATION_NAME = "name";
+
     private static final String COL_LOCATION_STATE = "state";
     private static final String COL_LOCATION_TYPE = "type"; // city, terminal, station
 
@@ -75,23 +76,29 @@ public class DatabaseHelper extends SQLiteOpenHelper {
     private static final String COL_BOOKING_TOTAL_FARE = "total_fare";
     private static final String COL_BOOKING_STATUS = "status";
     private static final String COL_BOOKING_BOOKING_DATE = "booking_date";
+    private static final String COL_BOOKING_CODE = "booking_code";
+
+    // Table: wallet
+    private static final String TABLE_WALLET = "wallet";
+    private static final String COL_WALLET_ID = "id";
+    private static final String COL_WALLET_USER_EMAIL = "user_email";
+    private static final String COL_WALLET_BALANCE = "balance";
+    private static final String COL_WALLET_UPDATED_AT = "updated_at";
+
+    // Table: wallet_transactions
+    private static final String TABLE_WALLET_TRANSACTIONS = "wallet_transactions";
+    private static final String COL_TRANSACTION_ID = "id";
+    private static final String COL_TRANSACTION_USER_EMAIL = "user_email";
+    private static final String COL_TRANSACTION_TYPE = "type"; // deposit, withdraw, payment
+    private static final String COL_TRANSACTION_AMOUNT = "amount";
+    private static final String COL_TRANSACTION_DESCRIPTION = "description";
+    private static final String COL_TRANSACTION_DATE = "transaction_date";
 
     public DatabaseHelper(Context context) {
         super(context, DATABASE_NAME, null, DATABASE_VERSION);
         
-        // Force recreate database on first run after update
-        try {
-            android.content.SharedPreferences prefs = context.getSharedPreferences("BTMS_DB_PREFS", android.content.Context.MODE_PRIVATE);
-            boolean dbRecreated = prefs.getBoolean("db_recreated_v5", false);
-            if (!dbRecreated) {
-                // Delete database file to force recreation
-                context.deleteDatabase(DATABASE_NAME);
-                android.util.Log.d("DatabaseHelper", "Database deleted to force recreation with route numbers");
-                prefs.edit().putBoolean("db_recreated_v5", true).apply();
-            }
-        } catch (Exception e) {
-            android.util.Log.e("DatabaseHelper", "Error checking database recreation: " + e.getMessage());
-        }
+        // Note: Database will be recreated automatically by SQLiteOpenHelper
+        // if DATABASE_VERSION is incremented. No need to manually delete.
     }
 
     @Override
@@ -149,8 +156,8 @@ public class DatabaseHelper extends SQLiteOpenHelper {
                 + COL_SCHEDULE_ARRIVAL_TIME + " TEXT NOT NULL,"
                 + COL_SCHEDULE_PRICE + " REAL NOT NULL,"
                 + COL_SCHEDULE_BUS_TYPE + " TEXT,"
-                + COL_SCHEDULE_TOTAL_SEATS + " INTEGER DEFAULT 40,"
-                + COL_SCHEDULE_AVAILABLE_SEATS + " INTEGER DEFAULT 40,"
+                + COL_SCHEDULE_TOTAL_SEATS + " INTEGER DEFAULT 28,"
+                + COL_SCHEDULE_AVAILABLE_SEATS + " INTEGER DEFAULT 28,"
                 + COL_SCHEDULE_DATE + " TEXT NOT NULL,"
                 + "FOREIGN KEY(" + COL_SCHEDULE_ROUTE_ID + ") REFERENCES " + TABLE_BUS_ROUTES + "(" + COL_ROUTE_ID + "),"
                 + "FOREIGN KEY(" + COL_SCHEDULE_COMPANY_ID + ") REFERENCES " + TABLE_BUS_COMPANIES + "(" + COL_COMPANY_ID + ")"
@@ -171,9 +178,30 @@ public class DatabaseHelper extends SQLiteOpenHelper {
                 + COL_BOOKING_TOTAL_FARE + " REAL NOT NULL,"
                 + COL_BOOKING_STATUS + " TEXT DEFAULT 'confirmed',"
                 + COL_BOOKING_BOOKING_DATE + " TEXT,"
+                + COL_BOOKING_CODE + " TEXT UNIQUE,"
                 + "FOREIGN KEY(" + COL_BOOKING_SCHEDULE_ID + ") REFERENCES " + TABLE_BUS_SCHEDULES + "(" + COL_SCHEDULE_ID + ")"
                 + ")";
         db.execSQL(createBookingsTable);
+
+        // Create wallet table
+        String createWalletTable = "CREATE TABLE " + TABLE_WALLET + "("
+                + COL_WALLET_ID + " INTEGER PRIMARY KEY AUTOINCREMENT,"
+                + COL_WALLET_USER_EMAIL + " TEXT UNIQUE NOT NULL,"
+                + COL_WALLET_BALANCE + " REAL DEFAULT 0.0,"
+                + COL_WALLET_UPDATED_AT + " TEXT DEFAULT CURRENT_TIMESTAMP"
+                + ")";
+        db.execSQL(createWalletTable);
+
+        // Create wallet_transactions table
+        String createWalletTransactionsTable = "CREATE TABLE " + TABLE_WALLET_TRANSACTIONS + "("
+                + COL_TRANSACTION_ID + " INTEGER PRIMARY KEY AUTOINCREMENT,"
+                + COL_TRANSACTION_USER_EMAIL + " TEXT NOT NULL,"
+                + COL_TRANSACTION_TYPE + " TEXT NOT NULL,"
+                + COL_TRANSACTION_AMOUNT + " REAL NOT NULL,"
+                + COL_TRANSACTION_DESCRIPTION + " TEXT,"
+                + COL_TRANSACTION_DATE + " TEXT DEFAULT CURRENT_TIMESTAMP"
+                + ")";
+        db.execSQL(createWalletTransactionsTable);
 
         // Insert initial data
         insertInitialData(db);
@@ -245,6 +273,158 @@ public class DatabaseHelper extends SQLiteOpenHelper {
             db.execSQL("DELETE FROM " + TABLE_BUS_SCHEDULES);
             insertSampleRoutes(db);
         }
+        
+        if (oldVersion < 6) {
+            // Remove all old schedules (past schedules) and keep only future schedules
+            android.util.Log.d("DatabaseHelper", "Upgrading to version 6: Removing old schedules");
+            
+            // Get current date and time
+            java.text.SimpleDateFormat dateFormat = new java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault());
+            java.text.SimpleDateFormat timeFormat = new java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault());
+            java.util.Calendar now = java.util.Calendar.getInstance();
+            String currentDate = dateFormat.format(now.getTime());
+            String currentTime = timeFormat.format(now.getTime());
+            
+            // Delete all schedules that are in the past
+            // Using: date < currentDate OR (date = currentDate AND departure_time < currentTime)
+            String deleteQuery = "DELETE FROM " + TABLE_BUS_SCHEDULES + 
+                    " WHERE (" + COL_SCHEDULE_DATE + " < ? OR " +
+                    "(" + COL_SCHEDULE_DATE + " = ? AND " + COL_SCHEDULE_DEPARTURE_TIME + " < ?))";
+            
+            db.execSQL(deleteQuery, new String[]{currentDate, currentDate, currentTime});
+            android.util.Log.d("DatabaseHelper", "Deleted old schedules before " + currentDate + " " + currentTime);
+        }
+
+        if (oldVersion < 7) {
+            // Force recreation of schedules and bookings for new sync logic
+            db.execSQL("DROP TABLE IF EXISTS " + TABLE_BUS_SCHEDULES);
+            db.execSQL("DROP TABLE IF EXISTS " + TABLE_BOOKINGS);
+            
+            // Re-create them using onCreate logic
+            String createSchedulesTable = "CREATE TABLE IF NOT EXISTS " + TABLE_BUS_SCHEDULES + "("
+                    + COL_SCHEDULE_ID + " INTEGER PRIMARY KEY AUTOINCREMENT,"
+                    + COL_SCHEDULE_ROUTE_ID + " INTEGER NOT NULL,"
+                    + COL_SCHEDULE_COMPANY_ID + " INTEGER NOT NULL,"
+                    + COL_SCHEDULE_DEPARTURE_TIME + " TEXT NOT NULL,"
+                    + COL_SCHEDULE_ARRIVAL_TIME + " TEXT NOT NULL,"
+                    + COL_SCHEDULE_PRICE + " REAL NOT NULL,"
+                    + COL_SCHEDULE_BUS_TYPE + " TEXT,"
+                    + COL_SCHEDULE_TOTAL_SEATS + " INTEGER DEFAULT 28,"
+                    + COL_SCHEDULE_AVAILABLE_SEATS + " INTEGER DEFAULT 28,"
+                    + COL_SCHEDULE_DATE + " TEXT NOT NULL,"
+                    + "FOREIGN KEY(" + COL_SCHEDULE_ROUTE_ID + ") REFERENCES " + TABLE_BUS_ROUTES + "(" + COL_ROUTE_ID + "),"
+                    + "FOREIGN KEY(" + COL_SCHEDULE_COMPANY_ID + ") REFERENCES " + TABLE_BUS_COMPANIES + "(" + COL_COMPANY_ID + ")"
+                    + ")";
+            db.execSQL(createSchedulesTable);
+
+            String createBookingsTable = "CREATE TABLE IF NOT EXISTS " + TABLE_BOOKINGS + "("
+                    + COL_BOOKING_ID + " INTEGER PRIMARY KEY AUTOINCREMENT,"
+                    + COL_BOOKING_SCHEDULE_ID + " INTEGER NOT NULL,"
+                    + COL_BOOKING_USER_EMAIL + " TEXT NOT NULL,"
+                    + COL_BOOKING_PASSENGER_NAME + " TEXT NOT NULL,"
+                    + COL_BOOKING_PASSENGER_AGE + " INTEGER,"
+                    + COL_BOOKING_PASSENGER_GENDER + " TEXT,"
+                    + COL_BOOKING_SEAT_NUMBERS + " TEXT,"
+                    + COL_BOOKING_BOARDING_POINT + " TEXT,"
+                    + COL_BOOKING_DROP_POINT + " TEXT,"
+                    + COL_BOOKING_TOTAL_FARE + " REAL NOT NULL,"
+                    + COL_BOOKING_STATUS + " TEXT DEFAULT 'confirmed',"
+                    + COL_BOOKING_BOOKING_DATE + " TEXT,"
+                    + COL_BOOKING_CODE + " TEXT UNIQUE,"
+                    + "FOREIGN KEY(" + COL_BOOKING_SCHEDULE_ID + ") REFERENCES " + TABLE_BUS_SCHEDULES + "(" + COL_SCHEDULE_ID + ")"
+                    + ")";
+            db.execSQL(createBookingsTable);
+        }
+        
+        if (oldVersion < 9) {
+            // Add booking_code column to bookings table
+            android.util.Log.d("DatabaseHelper", "Upgrading to version 9: Adding booking_code column");
+            try {
+                db.execSQL("ALTER TABLE " + TABLE_BOOKINGS + " ADD COLUMN " + COL_BOOKING_CODE + " TEXT UNIQUE");
+            } catch (Exception e) {
+                android.util.Log.e("DatabaseHelper", "Error adding booking_code column: " + e.getMessage());
+            }
+        }
+        
+        if (oldVersion < 10) {
+            // Ensure booking_code column exists (for databases that might have been created incorrectly)
+            android.util.Log.d("DatabaseHelper", "Upgrading to version 10: Ensuring booking_code column exists");
+            try {
+                // Check if column exists by trying to query it
+                Cursor cursor = db.rawQuery("PRAGMA table_info(" + TABLE_BOOKINGS + ")", null);
+                boolean columnExists = false;
+                if (cursor != null) {
+                    int nameIndex = cursor.getColumnIndex("name");
+                    while (cursor.moveToNext()) {
+                        String columnName = cursor.getString(nameIndex);
+                        if (COL_BOOKING_CODE.equals(columnName)) {
+                            columnExists = true;
+                            break;
+                        }
+                    }
+                    cursor.close();
+                }
+                
+                if (!columnExists) {
+                    android.util.Log.d("DatabaseHelper", "booking_code column does not exist, adding it");
+                    db.execSQL("ALTER TABLE " + TABLE_BOOKINGS + " ADD COLUMN " + COL_BOOKING_CODE + " TEXT UNIQUE");
+                } else {
+                    android.util.Log.d("DatabaseHelper", "booking_code column already exists");
+                }
+            } catch (Exception e) {
+                android.util.Log.e("DatabaseHelper", "Error ensuring booking_code column: " + e.getMessage());
+                // If ALTER fails, try to recreate the table
+                try {
+                    android.util.Log.d("DatabaseHelper", "Attempting to recreate bookings table with booking_code");
+                    db.execSQL("DROP TABLE IF EXISTS " + TABLE_BOOKINGS);
+                    String createBookingsTable = "CREATE TABLE " + TABLE_BOOKINGS + "("
+                            + COL_BOOKING_ID + " INTEGER PRIMARY KEY AUTOINCREMENT,"
+                            + COL_BOOKING_SCHEDULE_ID + " INTEGER NOT NULL,"
+                            + COL_BOOKING_USER_EMAIL + " TEXT NOT NULL,"
+                            + COL_BOOKING_PASSENGER_NAME + " TEXT NOT NULL,"
+                            + COL_BOOKING_PASSENGER_AGE + " INTEGER,"
+                            + COL_BOOKING_PASSENGER_GENDER + " TEXT,"
+                            + COL_BOOKING_SEAT_NUMBERS + " TEXT,"
+                            + COL_BOOKING_BOARDING_POINT + " TEXT,"
+                            + COL_BOOKING_DROP_POINT + " TEXT,"
+                            + COL_BOOKING_TOTAL_FARE + " REAL NOT NULL,"
+                            + COL_BOOKING_STATUS + " TEXT DEFAULT 'confirmed',"
+                            + COL_BOOKING_BOOKING_DATE + " TEXT,"
+                            + COL_BOOKING_CODE + " TEXT UNIQUE,"
+                            + "FOREIGN KEY(" + COL_BOOKING_SCHEDULE_ID + ") REFERENCES " + TABLE_BUS_SCHEDULES + "(" + COL_SCHEDULE_ID + ")"
+                            + ")";
+                    db.execSQL(createBookingsTable);
+                } catch (Exception e2) {
+                    android.util.Log.e("DatabaseHelper", "Error recreating bookings table: " + e2.getMessage());
+                }
+            }
+        }
+        
+        if (oldVersion < 11) {
+            // Create wallet tables
+            android.util.Log.d("DatabaseHelper", "Upgrading to version 11: Creating wallet tables");
+            try {
+                String createWalletTable = "CREATE TABLE IF NOT EXISTS " + TABLE_WALLET + "("
+                        + COL_WALLET_ID + " INTEGER PRIMARY KEY AUTOINCREMENT,"
+                        + COL_WALLET_USER_EMAIL + " TEXT UNIQUE NOT NULL,"
+                        + COL_WALLET_BALANCE + " REAL DEFAULT 0.0,"
+                        + COL_WALLET_UPDATED_AT + " TEXT DEFAULT CURRENT_TIMESTAMP"
+                        + ")";
+                db.execSQL(createWalletTable);
+
+                String createWalletTransactionsTable = "CREATE TABLE IF NOT EXISTS " + TABLE_WALLET_TRANSACTIONS + "("
+                        + COL_TRANSACTION_ID + " INTEGER PRIMARY KEY AUTOINCREMENT,"
+                        + COL_TRANSACTION_USER_EMAIL + " TEXT NOT NULL,"
+                        + COL_TRANSACTION_TYPE + " TEXT NOT NULL,"
+                        + COL_TRANSACTION_AMOUNT + " REAL NOT NULL,"
+                        + COL_TRANSACTION_DESCRIPTION + " TEXT,"
+                        + COL_TRANSACTION_DATE + " TEXT DEFAULT CURRENT_TIMESTAMP"
+                        + ")";
+                db.execSQL(createWalletTransactionsTable);
+            } catch (Exception e) {
+                android.util.Log.e("DatabaseHelper", "Error creating wallet tables: " + e.getMessage());
+            }
+        }
     }
 
     private void insertInitialData(SQLiteDatabase db) {
@@ -278,10 +458,11 @@ public class DatabaseHelper extends SQLiteOpenHelper {
             db.insert(TABLE_BUS_COMPANIES, null, companyValues);
         }
 
-        // Insert sample routes (New York to major cities)
+        // Insert sample routes
         insertSampleRoutes(db);
         
-        // Note: Sample schedules will be inserted on first query if needed
+        // Note: Sample schedules will be created on-demand when user searches for trips
+        // This avoids blocking database creation and potential crashes
     }
     
     // Call this method to ensure sample schedules exist
@@ -691,8 +872,15 @@ public class DatabaseHelper extends SQLiteOpenHelper {
     // Insert sample schedules for routes
     public void insertSampleSchedules() {
         java.text.SimpleDateFormat sdf = new java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault());
-        String today = sdf.format(new java.util.Date());
-        insertSampleSchedulesForDate(today);
+        java.util.Calendar cal = java.util.Calendar.getInstance();
+        
+        // Create schedules for today and next 7 days (only future schedules)
+        for (int i = 0; i < 7; i++) {
+            cal.setTime(new java.util.Date());
+            cal.add(java.util.Calendar.DAY_OF_MONTH, i);
+            String date = sdf.format(cal.getTime());
+            insertSampleSchedulesForDate(date);
+        }
     }
     
     // Insert sample schedules for a specific date
@@ -702,20 +890,43 @@ public class DatabaseHelper extends SQLiteOpenHelper {
     
     // Insert sample schedules for a specific date and route (or all routes if routeId is -1)
     public void insertSampleSchedulesForDate(String date, long specificRouteId) {
-        SQLiteDatabase db = this.getWritableDatabase();
-        
-        // Get route IDs - either specific route or all routes
-        Cursor routeCursor;
-        if (specificRouteId > 0) {
-            routeCursor = db.query(TABLE_BUS_ROUTES, new String[]{COL_ROUTE_ID}, 
-                    COL_ROUTE_ID + " = ?", new String[]{String.valueOf(specificRouteId)}, 
-                    null, null, null);
-        } else {
-            routeCursor = db.query(TABLE_BUS_ROUTES, new String[]{COL_ROUTE_ID}, null, null, null, null, null);
-        }
-        Cursor companyCursor = db.query(TABLE_BUS_COMPANIES, new String[]{COL_COMPANY_ID}, null, null, null, null, null);
-        
-        if (routeCursor.moveToFirst() && companyCursor.moveToFirst()) {
+        SQLiteDatabase db = null;
+        Cursor routeCursor = null;
+        Cursor companyCursor = null;
+        try {
+            db = this.getWritableDatabase();
+            if (db == null) {
+                android.util.Log.e("DatabaseHelper", "Cannot get writable database in insertSampleSchedulesForDate");
+                return;
+            }
+            
+            // Get route IDs - either specific route or all routes
+            if (specificRouteId > 0) {
+                routeCursor = db.query(TABLE_BUS_ROUTES, new String[]{COL_ROUTE_ID}, 
+                        COL_ROUTE_ID + " = ?", new String[]{String.valueOf(specificRouteId)}, 
+                        null, null, null);
+            } else {
+                routeCursor = db.query(TABLE_BUS_ROUTES, new String[]{COL_ROUTE_ID}, null, null, null, null, null);
+            }
+            companyCursor = db.query(TABLE_BUS_COMPANIES, new String[]{COL_COMPANY_ID}, null, null, null, null, null);
+            
+            // Check if we have routes and companies
+            if (routeCursor == null || companyCursor == null) {
+                android.util.Log.e("DatabaseHelper", "Cannot get routes or companies cursor");
+                return;
+            }
+            
+            if (routeCursor.getCount() == 0) {
+                android.util.Log.w("DatabaseHelper", "No routes found in database. Cannot create schedules.");
+                return;
+            }
+            
+            if (companyCursor.getCount() == 0) {
+                android.util.Log.w("DatabaseHelper", "No companies found in database. Cannot create schedules.");
+                return;
+            }
+            
+            if (routeCursor.moveToFirst() && companyCursor.moveToFirst()) {
             int companyIndex = 0;
             do {
                 long routeId = routeCursor.getLong(0);
@@ -744,9 +955,39 @@ public class DatabaseHelper extends SQLiteOpenHelper {
                 // Different routes will have different times
                 int numSchedules = 2 + (int)(Math.random() * 2); // 2 to 3 schedules per route
                 
+                // Get current date and time to ensure schedules are in the future
+                java.text.SimpleDateFormat dateFormat = new java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault());
+                java.text.SimpleDateFormat timeFormat = new java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault());
+                java.util.Calendar now = java.util.Calendar.getInstance();
+                String currentDate = dateFormat.format(now.getTime());
+                String currentTime = timeFormat.format(now.getTime());
+                String[] currentTimeParts = currentTime.split(":");
+                int currentHour = Integer.parseInt(currentTimeParts[0]);
+                int currentMinute = Integer.parseInt(currentTimeParts[1]);
+                
                 // Generate random departure times for this route
-                int baseHour = 6 + (int)(Math.random() * 14); // Random hour between 6 AM and 8 PM
-                int baseMinute = (int)(Math.random() * 4) * 15; // 0, 15, 30, or 45
+                // If date is today, ensure times are within next 1 hour (from current time to 1 hour later)
+                int baseHour;
+                int baseMinute;
+                if (date.equals(currentDate)) {
+                    // For today, create schedules from current time onwards (at least 30 minutes later)
+                    // Add random minutes (30-180 minutes) to current time for variety
+                    int additionalMinutes = 30 + (int)(Math.random() * 150); // 30 minutes to 3 hours later
+                    baseHour = currentHour;
+                    baseMinute = currentMinute + additionalMinutes;
+                    while (baseMinute >= 60) {
+                        baseMinute -= 60;
+                        baseHour++;
+                        if (baseHour >= 24) {
+                            // If too late today, skip creating schedules for today
+                            continue; // Skip this route for today
+                        }
+                    }
+                } else {
+                    // For future dates, use random times between 6 AM and 10 PM for more variety
+                    baseHour = 6 + (int)(Math.random() * 16); // Random hour between 6 AM and 10 PM
+                    baseMinute = (int)(Math.random() * 4) * 15; // 0, 15, 30, or 45
+                }
                 
                 for (int i = 0; i < numSchedules; i++) {
                     ContentValues values = new ContentValues();
@@ -772,6 +1013,30 @@ public class DatabaseHelper extends SQLiteOpenHelper {
                         hour = (hour + 1) % 24;
                     }
                     
+                    // If date is today, ensure time is after current time (at least 30 minutes later)
+                    if (date.equals(currentDate)) {
+                        // Check if time is before current time
+                        if (hour < currentHour || (hour == currentHour && minute < currentMinute)) {
+                            // Skip if before current time
+                            continue;
+                        }
+                        // Ensure at least 30 minutes difference from current time
+                        int minHour = currentHour;
+                        int minMinute = currentMinute + 30;
+                        if (minMinute >= 60) {
+                            minMinute -= 60;
+                            minHour++;
+                        }
+                        if (hour < minHour || (hour == minHour && minute < minMinute)) {
+                            // Adjust to at least 30 minutes later
+                            hour = minHour;
+                            minute = minMinute;
+                            if (hour >= 24) {
+                                continue; // Skip if too late
+                            }
+                        }
+                    }
+                    
                     // Calculate arrival time (journey duration varies by route)
                     int journeyDuration = 20 + (int)(Math.random() * 40); // 20-60 minutes
                     int arrivalHour = hour;
@@ -792,19 +1057,81 @@ public class DatabaseHelper extends SQLiteOpenHelper {
                     values.put(COL_SCHEDULE_PRICE, Math.round(price));
                     
                     values.put(COL_SCHEDULE_BUS_TYPE, busTypes[i % busTypes.length]);
-                    values.put(COL_SCHEDULE_TOTAL_SEATS, 40);
-                    values.put(COL_SCHEDULE_AVAILABLE_SEATS, 40 - (int)(Math.random() * 30)); // Random available seats
+                    values.put(COL_SCHEDULE_TOTAL_SEATS, 28);
+                    
+                    // Make it more likely to have few seats left for testing
+                    int bookedCount;
+                    double rand = Math.random();
+                    if (rand < 0.3) {
+                        bookedCount = 23 + (int)(Math.random() * 5); // 23-27 booked (1-5 left)
+                    } else {
+                        bookedCount = (int)(Math.random() * 20); // 0-19 booked (9-28 left)
+                    }
+                    
+                    int availSeats = 28 - bookedCount;
+                    values.put(COL_SCHEDULE_AVAILABLE_SEATS, availSeats);
                     values.put(COL_SCHEDULE_DATE, date);
                     
-                    db.insert(TABLE_BUS_SCHEDULES, null, values);
+                    long sId = db.insert(TABLE_BUS_SCHEDULES, null, values);
+                    
+                    // Insert sample bookings to match available seats
+                    if (sId != -1 && bookedCount > 0) {
+                        insertSampleBookingsForSchedule(db, sId, bookedCount);
+                    }
                 }
                 
                 companyIndex++;
             } while (routeCursor.moveToNext());
+            }
+        } catch (Exception e) {
+            android.util.Log.e("DatabaseHelper", "Error in insertSampleSchedulesForDate: " + e.getMessage(), e);
+        } finally {
+            if (routeCursor != null && !routeCursor.isClosed()) {
+                routeCursor.close();
+            }
+            if (companyCursor != null && !companyCursor.isClosed()) {
+                companyCursor.close();
+            }
+            // Don't close db here as it might be used by caller
+        }
+    }
+
+    // Helper to insert sample bookings when generating schedules
+    private void insertSampleBookingsForSchedule(SQLiteDatabase db, long scheduleId, int count) {
+        String[] seatPrefixes = {"A", "B", "C"};
+        java.util.List<String> seats = new java.util.ArrayList<>();
+        
+        // Generate random unique seat numbers
+        java.util.Set<String> chosenSeats = new java.util.HashSet<>();
+        while (chosenSeats.size() < count) {
+            String prefix = seatPrefixes[(int)(Math.random() * seatPrefixes.length)];
+            int num = 1 + (int)(Math.random() * 14);
+            chosenSeats.add(prefix + num);
         }
         
-        routeCursor.close();
-        companyCursor.close();
+        // Group seats into a few bookings
+        java.util.List<String> seatList = new java.util.ArrayList<>(chosenSeats);
+        int index = 0;
+        while (index < seatList.size()) {
+            int groupSize = 1 + (int)(Math.random() * 3); // 1-3 seats per booking
+            if (index + groupSize > seatList.size()) groupSize = seatList.size() - index;
+            
+            StringBuilder sb = new StringBuilder();
+            for (int i = 0; i < groupSize; i++) {
+                if (i > 0) sb.append(", ");
+                sb.append(seatList.get(index + i));
+            }
+            
+            ContentValues v = new ContentValues();
+            v.put(COL_BOOKING_SCHEDULE_ID, scheduleId);
+            v.put(COL_BOOKING_USER_EMAIL, "sample@example.com");
+            v.put(COL_BOOKING_PASSENGER_NAME, "Khách hàng mẫu");
+            v.put(COL_BOOKING_SEAT_NUMBERS, sb.toString());
+            v.put(COL_BOOKING_STATUS, "confirmed");
+            db.insert(TABLE_BOOKINGS, null, v);
+            
+            index += groupSize;
+        }
     }
 
     // Insert booking
@@ -821,6 +1148,23 @@ public class DatabaseHelper extends SQLiteOpenHelper {
                               String boardingPoint, String dropPoint, double totalFare, 
                               String status, String bookingDate) {
         SQLiteDatabase db = this.getWritableDatabase();
+        
+        // Generate unique booking code
+        String bookingCode = BookingCodeHelper.generateBookingCode();
+        // Ensure uniqueness (retry if duplicate)
+        int retries = 0;
+        while (retries < 10) {
+            Cursor checkCursor = db.query(TABLE_BOOKINGS, new String[]{COL_BOOKING_ID}, 
+                    COL_BOOKING_CODE + " = ?", new String[]{bookingCode}, null, null, null);
+            if (checkCursor != null && checkCursor.getCount() == 0) {
+                checkCursor.close();
+                break;
+            }
+            if (checkCursor != null) checkCursor.close();
+            bookingCode = BookingCodeHelper.generateBookingCode();
+            retries++;
+        }
+        
         ContentValues values = new ContentValues();
         values.put(COL_BOOKING_SCHEDULE_ID, scheduleId);
         values.put(COL_BOOKING_USER_EMAIL, userEmail);
@@ -833,10 +1177,41 @@ public class DatabaseHelper extends SQLiteOpenHelper {
         values.put(COL_BOOKING_TOTAL_FARE, totalFare);
         values.put(COL_BOOKING_STATUS, status);
         values.put(COL_BOOKING_BOOKING_DATE, bookingDate);
+        values.put(COL_BOOKING_CODE, bookingCode);
         
         long id = db.insert(TABLE_BOOKINGS, null, values);
+        
+        if (id != -1 && status.equals("confirmed")) {
+            // Decrement available seats based on number of seats booked
+            int numSeats = 1;
+            if (seatNumbers != null && !seatNumbers.isEmpty()) {
+                numSeats = seatNumbers.split(",").length;
+            }
+            
+            String updateQuery = "UPDATE " + TABLE_BUS_SCHEDULES + 
+                    " SET " + COL_SCHEDULE_AVAILABLE_SEATS + " = " + COL_SCHEDULE_AVAILABLE_SEATS + " - ?" +
+                    " WHERE " + COL_SCHEDULE_ID + " = ?";
+            db.execSQL(updateQuery, new Object[]{numSeats, scheduleId});
+            android.util.Log.d("DatabaseHelper", "Updated available seats for schedule " + scheduleId + ", decreased by " + numSeats);
+        }
+        
         db.close();
         return id;
+    }
+    
+    // Get schedule available seats
+    public int getScheduleAvailableSeats(long scheduleId) {
+        SQLiteDatabase db = this.getReadableDatabase();
+        int availableSeats = 0;
+        Cursor cursor = db.query(TABLE_BUS_SCHEDULES, new String[]{COL_SCHEDULE_AVAILABLE_SEATS},
+                COL_SCHEDULE_ID + " = ?", new String[]{String.valueOf(scheduleId)},
+                null, null, null);
+        if (cursor != null && cursor.moveToFirst()) {
+            availableSeats = cursor.getInt(0);
+            cursor.close();
+        }
+        db.close();
+        return availableSeats;
     }
 
     // Get bookings for user
@@ -867,6 +1242,7 @@ public class DatabaseHelper extends SQLiteOpenHelper {
                     "b." + COL_BOOKING_BOARDING_POINT + " as boarding_point, " +
                     "b." + COL_BOOKING_DROP_POINT + " as drop_point, " +
                     "b." + COL_BOOKING_SEAT_NUMBERS + " as seat_numbers, " +
+                    "r." + COL_ROUTE_NUMBER + " as route_number, " +
                     "COALESCE(c." + COL_COMPANY_NAME + ", 'EASYBUS') as company_name, " +
                     "l1." + COL_LOCATION_NAME + " as from_location, " +
                     "l2." + COL_LOCATION_NAME + " as to_location " +
@@ -884,6 +1260,242 @@ public class DatabaseHelper extends SQLiteOpenHelper {
             return cursor;
         } catch (Exception e) {
             android.util.Log.e("DatabaseHelper", "Error in getUserBookingsWithDetails: " + e.getMessage(), e);
+            return null;
+        }
+    }
+    
+    // Get list of booked seats for a specific schedule
+    public List<String> getBookedSeatsForSchedule(long scheduleId) {
+        List<String> bookedSeats = new ArrayList<>();
+        SQLiteDatabase db = this.getReadableDatabase();
+        Cursor cursor = null;
+        
+        try {
+            String query = "SELECT " + COL_BOOKING_SEAT_NUMBERS + 
+                    " FROM " + TABLE_BOOKINGS + 
+                    " WHERE " + COL_BOOKING_SCHEDULE_ID + " = ?" +
+                    " AND " + COL_BOOKING_STATUS + " != 'cancelled'";
+            
+            cursor = db.rawQuery(query, new String[]{String.valueOf(scheduleId)});
+            
+            if (cursor != null && cursor.moveToFirst()) {
+                do {
+                    String seatNumbers = cursor.getString(0);
+                    if (seatNumbers != null && !seatNumbers.isEmpty()) {
+                        // Parse seat numbers (format: "1A, 1B, 2A" or "A1, B1, C1")
+                        String[] seats = seatNumbers.split(",");
+                        for (String seat : seats) {
+                            String trimmedSeat = seat.trim();
+                            if (!trimmedSeat.isEmpty() && !bookedSeats.contains(trimmedSeat)) {
+                                bookedSeats.add(trimmedSeat);
+                            }
+                        }
+                    }
+                } while (cursor.moveToNext());
+            }
+            
+            android.util.Log.d("DatabaseHelper", "Found " + bookedSeats.size() + " booked seats for schedule " + scheduleId);
+        } catch (Exception e) {
+            android.util.Log.e("DatabaseHelper", "Error getting booked seats: " + e.getMessage(), e);
+        } finally {
+            if (cursor != null && !cursor.isClosed()) {
+                cursor.close();
+            }
+        }
+        
+        return bookedSeats;
+    }
+    
+    // Get suggested journeys (upcoming journeys after current time)
+    public Cursor getSuggestedJourneys(int limit) {
+        SQLiteDatabase db = null;
+        Cursor cursor = null;
+        try {
+            db = this.getReadableDatabase();
+            if (db == null) {
+                android.util.Log.e("DatabaseHelper", "Cannot get readable database in getSuggestedJourneys");
+                return null;
+            }
+            
+            // Check if database is open
+            if (!db.isOpen()) {
+                android.util.Log.e("DatabaseHelper", "Database is not open in getSuggestedJourneys");
+                return null;
+            }
+            // Get current date and time
+            java.text.SimpleDateFormat dateFormat = new java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault());
+            java.text.SimpleDateFormat timeFormat = new java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault());
+            java.util.Calendar now = java.util.Calendar.getInstance();
+            String currentDate = dateFormat.format(now.getTime());
+            String currentTime = timeFormat.format(now.getTime());
+            
+            // First, delete old schedules (past schedules) to keep database clean
+            // Delete schedules that are before current time
+            try {
+                SQLiteDatabase writeDb = this.getWritableDatabase();
+                String deleteQuery = "DELETE FROM " + TABLE_BUS_SCHEDULES + 
+                        " WHERE (" + COL_SCHEDULE_DATE + " < ? OR " +
+                        "(" + COL_SCHEDULE_DATE + " = ? AND " + COL_SCHEDULE_DEPARTURE_TIME + " < ?))";
+                writeDb.execSQL(deleteQuery, new String[]{currentDate, currentDate, currentTime});
+                android.util.Log.d("DatabaseHelper", "Cleaned up old schedules (before " + currentDate + " " + currentTime + ")");
+                writeDb.close();
+            } catch (Exception e) {
+                android.util.Log.e("DatabaseHelper", "Error deleting old schedules: " + e.getMessage(), e);
+            }
+            
+            // Check if there are any upcoming schedules in the future (after current time)
+            // This includes schedules from now to several days in the future for random suggestions
+            String checkQuery = "SELECT COUNT(*) FROM " + TABLE_BUS_SCHEDULES + " s " +
+                    "WHERE (s." + COL_SCHEDULE_DATE + " > ? OR " +
+                    "(s." + COL_SCHEDULE_DATE + " = ? AND s." + COL_SCHEDULE_DEPARTURE_TIME + " >= ?))";
+            android.database.Cursor checkCursor = db.rawQuery(checkQuery, new String[]{
+                    currentDate, currentDate, currentTime
+            });
+            int count = 0;
+            if (checkCursor.moveToFirst()) {
+                count = checkCursor.getInt(0);
+            }
+            checkCursor.close();
+            
+            // If no upcoming schedules exist, create them (but don't block)
+            if (count == 0) {
+                android.util.Log.d("DatabaseHelper", "No upcoming schedules found, will create new ones");
+                // Close read database before opening write database
+                try {
+                    db.close();
+                } catch (Exception e) {
+                    android.util.Log.e("DatabaseHelper", "Error closing read database: " + e.getMessage(), e);
+                }
+                
+                try {
+                    // First, ensure we have routes in database
+                    SQLiteDatabase checkDb = this.getReadableDatabase();
+                    Cursor routeCheck = checkDb.query(TABLE_BUS_ROUTES, new String[]{COL_ROUTE_ID}, null, null, null, null, null, "1");
+                    boolean hasRoutes = routeCheck != null && routeCheck.moveToFirst();
+                    if (routeCheck != null) {
+                        routeCheck.close();
+                    }
+                    checkDb.close();
+                    
+                    if (!hasRoutes) {
+                        android.util.Log.w("DatabaseHelper", "No routes found. Cannot create schedules.");
+                        // Reopen read database for query (will return empty cursor)
+                        try {
+                            db = this.getReadableDatabase();
+                        } catch (Exception ex) {
+                            android.util.Log.e("DatabaseHelper", "Error reopening database: " + ex.getMessage(), ex);
+                            return null;
+                        }
+                    } else {
+                        // Check current time - if it's too late (after 22:00), start from tomorrow
+                        // Also ensure schedules are at least 1 hour from now
+                        try {
+                            int currentHour = Integer.parseInt(currentTime.split(":")[0]);
+                            int currentMinute = Integer.parseInt(currentTime.split(":")[1]);
+                            int startDay = 0;
+                            
+                            // If current time + 1 hour is after 23:00, start from tomorrow
+                            int futureHour = currentHour + 1;
+                            if (futureHour >= 24) {
+                                startDay = 1; // Start from tomorrow if too late
+                            }
+                            
+                            // Create schedules for today (from now onwards) and next 7 days
+                            // This ensures we have plenty of random suggestions with various routes and locations
+                            java.util.Calendar cal = java.util.Calendar.getInstance();
+                            for (int i = 0; i < 7; i++) {
+                                cal.setTime(new java.util.Date());
+                                cal.add(java.util.Calendar.DAY_OF_MONTH, i);
+                                String date = dateFormat.format(cal.getTime());
+                                try {
+                                    insertSampleSchedulesForDate(date);
+                                } catch (Exception e) {
+                                    android.util.Log.e("DatabaseHelper", "Error creating schedules for date " + date + ": " + e.getMessage(), e);
+                                    // Continue with next date
+                                }
+                            }
+                        } catch (Exception scheduleException) {
+                            android.util.Log.e("DatabaseHelper", "Error in schedule creation logic: " + scheduleException.getMessage(), scheduleException);
+                        }
+                        
+                        // Reopen read database for query
+                        try {
+                            db = this.getReadableDatabase();
+                        } catch (Exception ex) {
+                            android.util.Log.e("DatabaseHelper", "Error reopening database after schedule creation: " + ex.getMessage(), ex);
+                            return null;
+                        }
+                    }
+                } catch (Exception e) {
+                    android.util.Log.e("DatabaseHelper", "Error creating sample schedules: " + e.getMessage(), e);
+                    // Reopen read database for query even if creation failed
+                    try {
+                        db = this.getReadableDatabase();
+                    } catch (Exception ex) {
+                        android.util.Log.e("DatabaseHelper", "Error reopening database: " + ex.getMessage(), ex);
+                    }
+                }
+            }
+            
+            // Query to get random upcoming schedules in the future (after current time)
+            // This will return random suggestions from various routes and locations
+            // Schedules should be: (date > currentDate) OR (date = currentDate AND time >= currentTime)
+            // Order randomly to get variety, then by date and time ascending
+            // Group by route_number to avoid showing multiple schedules for the same route
+            String query = "SELECT " +
+                    "s." + COL_SCHEDULE_ID + " as schedule_id, " +
+                    "s." + COL_SCHEDULE_ROUTE_ID + " as route_id, " +
+                    "s." + COL_SCHEDULE_DEPARTURE_TIME + " as departure_time, " +
+                    "s." + COL_SCHEDULE_ARRIVAL_TIME + " as arrival_time, " +
+                    "s." + COL_SCHEDULE_DATE + " as date, " +
+                    "s." + COL_SCHEDULE_PRICE + " as price, " +
+                    "s." + COL_SCHEDULE_BUS_TYPE + " as bus_type, " +
+                    "s." + COL_SCHEDULE_AVAILABLE_SEATS + " as available_seats, " +
+                    "r." + COL_ROUTE_NUMBER + " as route_number, " +
+                    "COALESCE(c." + COL_COMPANY_NAME + ", 'EASYBUS') as company_name, " +
+                    "l1." + COL_LOCATION_NAME + " as from_location, " +
+                    "l2." + COL_LOCATION_NAME + " as to_location " +
+                    "FROM " + TABLE_BUS_SCHEDULES + " s " +
+                    "INNER JOIN " + TABLE_BUS_ROUTES + " r ON s." + COL_SCHEDULE_ROUTE_ID + " = r." + COL_ROUTE_ID + " " +
+                    "INNER JOIN " + TABLE_LOCATIONS + " l1 ON r." + COL_ROUTE_FROM + " = l1." + COL_LOCATION_ID + " " +
+                    "INNER JOIN " + TABLE_LOCATIONS + " l2 ON r." + COL_ROUTE_TO + " = l2." + COL_LOCATION_ID + " " +
+                    "LEFT JOIN " + TABLE_BUS_COMPANIES + " c ON s." + COL_SCHEDULE_COMPANY_ID + " = c." + COL_COMPANY_ID + " " +
+                    "WHERE (s." + COL_SCHEDULE_DATE + " > ? OR " +
+                    "(s." + COL_SCHEDULE_DATE + " = ? AND s." + COL_SCHEDULE_DEPARTURE_TIME + " >= ?)) " +
+                    "GROUP BY r." + COL_ROUTE_NUMBER + " " + // Ensure unique route numbers in suggestions
+                    "ORDER BY RANDOM() " + // Random order for variety
+                    "LIMIT ?";
+            
+            android.util.Log.d("DatabaseHelper", "Getting random suggested journeys in the future - From: " + currentDate + " " + currentTime);
+            try {
+                cursor = db.rawQuery(query, new String[]{
+                        currentDate, currentDate, currentTime,
+                        String.valueOf(limit)
+                });
+                android.util.Log.d("DatabaseHelper", "Query returned " + (cursor != null ? cursor.getCount() : 0) + " suggested journeys");
+                // Note: Don't close db here, cursor needs the database to be open
+                return cursor;
+            } catch (Exception queryException) {
+                android.util.Log.e("DatabaseHelper", "Error executing query in getSuggestedJourneys: " + queryException.getMessage(), queryException);
+                if (cursor != null && !cursor.isClosed()) {
+                    try {
+                        cursor.close();
+                    } catch (Exception ex) {
+                        android.util.Log.e("DatabaseHelper", "Error closing cursor: " + ex.getMessage(), ex);
+                    }
+                }
+                return null;
+            }
+        } catch (Exception e) {
+            android.util.Log.e("DatabaseHelper", "Error in getSuggestedJourneys: " + e.getMessage(), e);
+            if (cursor != null && !cursor.isClosed()) {
+                try {
+                    cursor.close();
+                } catch (Exception ex) {
+                    android.util.Log.e("DatabaseHelper", "Error closing cursor in catch: " + ex.getMessage(), ex);
+                }
+            }
+            // Don't close db here as it might be used by other operations
             return null;
         }
     }
@@ -932,6 +1544,8 @@ public class DatabaseHelper extends SQLiteOpenHelper {
                     "b." + COL_BOOKING_TOTAL_FARE + " as total_fare, " +
                     "b." + COL_BOOKING_STATUS + " as status, " +
                     "b." + COL_BOOKING_BOOKING_DATE + " as booking_date, " +
+                    "b." + COL_BOOKING_CODE + " as booking_code, " +
+                    "r." + COL_ROUTE_NUMBER + " as route_number, " +
                     "s." + COL_SCHEDULE_DEPARTURE_TIME + " as departure_time, " +
                     "s." + COL_SCHEDULE_ARRIVAL_TIME + " as arrival_time, " +
                     "s." + COL_SCHEDULE_DATE + " as date, " +
@@ -1235,39 +1849,96 @@ public class DatabaseHelper extends SQLiteOpenHelper {
 
     // Login user
     public boolean loginUser(String email, String password) {
-        SQLiteDatabase db = this.getReadableDatabase();
-        Cursor cursor = db.query(TABLE_USERS,
-                new String[]{COL_USER_ID, COL_USER_IS_VERIFIED},
-                COL_USER_EMAIL + " = ? AND " + COL_USER_PASSWORD + " = ?",
-                new String[]{email, password},
-                null, null, null);
-        
-        boolean exists = cursor.moveToFirst();
-        if (exists) {
-            // User exists and password matches
-            // Allow login (users are now auto-verified on registration)
-            cursor.close();
-            db.close();
-            return true;
+        SQLiteDatabase db = null;
+        Cursor cursor = null;
+        try {
+            db = this.getReadableDatabase();
+            if (db == null) {
+                android.util.Log.e("DatabaseHelper", "Cannot get readable database");
+                return false;
+            }
+            
+            cursor = db.query(TABLE_USERS,
+                    new String[]{COL_USER_ID, COL_USER_IS_VERIFIED},
+                    COL_USER_EMAIL + " = ? AND " + COL_USER_PASSWORD + " = ?",
+                    new String[]{email, password},
+                    null, null, null);
+            
+            if (cursor == null) {
+                android.util.Log.e("DatabaseHelper", "Cursor is null");
+                return false;
+            }
+            
+            boolean exists = cursor.moveToFirst();
+            if (exists) {
+                // User exists and password matches
+                // Allow login (users are now auto-verified on registration)
+                return true;
+            }
+            return false;
+        } catch (Exception e) {
+            android.util.Log.e("DatabaseHelper", "Error in loginUser: " + e.getMessage(), e);
+            return false;
+        } finally {
+            if (cursor != null) {
+                try {
+                    cursor.close();
+                } catch (Exception e) {
+                    android.util.Log.e("DatabaseHelper", "Error closing cursor: " + e.getMessage(), e);
+                }
+            }
+            if (db != null) {
+                try {
+                    db.close();
+                } catch (Exception e) {
+                    android.util.Log.e("DatabaseHelper", "Error closing database: " + e.getMessage(), e);
+                }
+            }
         }
-        cursor.close();
-        db.close();
-        return false;
     }
 
     // Check if email exists
     public boolean emailExists(String email) {
-        SQLiteDatabase db = this.getReadableDatabase();
-        Cursor cursor = db.query(TABLE_USERS,
-                new String[]{COL_USER_ID},
-                COL_USER_EMAIL + " = ?",
-                new String[]{email},
-                null, null, null);
-        
-        boolean exists = cursor.moveToFirst();
-        cursor.close();
-        db.close();
-        return exists;
+        SQLiteDatabase db = null;
+        Cursor cursor = null;
+        try {
+            db = this.getReadableDatabase();
+            if (db == null) {
+                android.util.Log.e("DatabaseHelper", "Cannot get readable database");
+                return false;
+            }
+            
+            cursor = db.query(TABLE_USERS,
+                    new String[]{COL_USER_ID},
+                    COL_USER_EMAIL + " = ?",
+                    new String[]{email},
+                    null, null, null);
+            
+            if (cursor == null) {
+                return false;
+            }
+            
+            boolean exists = cursor.moveToFirst();
+            return exists;
+        } catch (Exception e) {
+            android.util.Log.e("DatabaseHelper", "Error in emailExists: " + e.getMessage(), e);
+            return false;
+        } finally {
+            if (cursor != null) {
+                try {
+                    cursor.close();
+                } catch (Exception e) {
+                    android.util.Log.e("DatabaseHelper", "Error closing cursor: " + e.getMessage(), e);
+                }
+            }
+            if (db != null) {
+                try {
+                    db.close();
+                } catch (Exception e) {
+                    android.util.Log.e("DatabaseHelper", "Error closing database: " + e.getMessage(), e);
+                }
+            }
+        }
     }
 
     // Verify user email
@@ -1362,23 +2033,249 @@ public class DatabaseHelper extends SQLiteOpenHelper {
 
     // Get user info
     public android.content.ContentValues getUserInfo(String email) {
+        SQLiteDatabase db = null;
+        Cursor cursor = null;
+        android.content.ContentValues userInfo = new android.content.ContentValues();
+        
+        try {
+            db = this.getReadableDatabase();
+            if (db == null) {
+                android.util.Log.e("DatabaseHelper", "Cannot get readable database");
+                return userInfo;
+            }
+            
+            cursor = db.query(TABLE_USERS,
+                    new String[]{COL_USER_ID, COL_USER_NAME, COL_USER_EMAIL, COL_USER_PHONE},
+                    COL_USER_EMAIL + " = ?",
+                    new String[]{email},
+                    null, null, null);
+            
+            if (cursor != null && cursor.moveToFirst()) {
+                try {
+                    userInfo.put("id", cursor.getLong(0));
+                    String name = cursor.getString(1);
+                    if (name != null) {
+                        userInfo.put("name", name);
+                    }
+                    String emailValue = cursor.getString(2);
+                    if (emailValue != null) {
+                        userInfo.put("email", emailValue);
+                    }
+                    String phone = cursor.getString(3);
+                    if (phone != null) {
+                        userInfo.put("phone", phone);
+                    }
+                } catch (Exception e) {
+                    android.util.Log.e("DatabaseHelper", "Error reading user info: " + e.getMessage(), e);
+                }
+            }
+        } catch (Exception e) {
+            android.util.Log.e("DatabaseHelper", "Error in getUserInfo: " + e.getMessage(), e);
+        } finally {
+            if (cursor != null) {
+                try {
+                    cursor.close();
+                } catch (Exception e) {
+                    android.util.Log.e("DatabaseHelper", "Error closing cursor: " + e.getMessage(), e);
+                }
+            }
+            if (db != null) {
+                try {
+                    db.close();
+                } catch (Exception e) {
+                    android.util.Log.e("DatabaseHelper", "Error closing database: " + e.getMessage(), e);
+                }
+            }
+        }
+        return userInfo;
+    }
+    
+    // ========== WALLET METHODS ==========
+    
+    /**
+     * Get wallet balance for a user
+     */
+    public double getWalletBalance(String userEmail) {
         SQLiteDatabase db = this.getReadableDatabase();
-        Cursor cursor = db.query(TABLE_USERS,
-                new String[]{COL_USER_ID, COL_USER_NAME, COL_USER_EMAIL, COL_USER_PHONE},
-                COL_USER_EMAIL + " = ?",
-                new String[]{email},
+        double balance = 0.0;
+        
+        Cursor cursor = db.query(TABLE_WALLET,
+                new String[]{COL_WALLET_BALANCE},
+                COL_WALLET_USER_EMAIL + " = ?",
+                new String[]{userEmail},
                 null, null, null);
         
-        android.content.ContentValues userInfo = new android.content.ContentValues();
-        if (cursor.moveToFirst()) {
-            userInfo.put("id", cursor.getLong(0));
-            userInfo.put("name", cursor.getString(1));
-            userInfo.put("email", cursor.getString(2));
-            userInfo.put("phone", cursor.getString(3));
+        if (cursor != null && cursor.moveToFirst()) {
+            int balanceIndex = cursor.getColumnIndex(COL_WALLET_BALANCE);
+            if (balanceIndex >= 0) {
+                balance = cursor.getDouble(balanceIndex);
+            }
+            cursor.close();
+        } else {
+            // Create wallet if doesn't exist
+            createWallet(userEmail);
         }
-        cursor.close();
-        db.close();
-        return userInfo;
+        
+        return balance;
+    }
+    
+    /**
+     * Create wallet for a user
+     */
+    public void createWallet(String userEmail) {
+        SQLiteDatabase db = this.getWritableDatabase();
+        ContentValues values = new ContentValues();
+        values.put(COL_WALLET_USER_EMAIL, userEmail);
+        values.put(COL_WALLET_BALANCE, 0.0);
+        db.insert(TABLE_WALLET, null, values);
+    }
+    
+    /**
+     * Deposit money to wallet
+     */
+    public boolean depositToWallet(String userEmail, double amount, String description) {
+        SQLiteDatabase db = this.getWritableDatabase();
+        
+        try {
+            db.beginTransaction();
+            
+            // Get current balance
+            double currentBalance = getWalletBalance(userEmail);
+            double newBalance = currentBalance + amount;
+            
+            // Update wallet balance
+            ContentValues walletValues = new ContentValues();
+            walletValues.put(COL_WALLET_BALANCE, newBalance);
+            walletValues.put(COL_WALLET_UPDATED_AT, new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault()).format(new java.util.Date()));
+            
+            int updated = db.update(TABLE_WALLET, walletValues,
+                    COL_WALLET_USER_EMAIL + " = ?",
+                    new String[]{userEmail});
+            
+            if (updated == 0) {
+                // Wallet doesn't exist, create it
+                createWallet(userEmail);
+                walletValues.put(COL_WALLET_BALANCE, amount);
+                db.insert(TABLE_WALLET, null, walletValues);
+            }
+            
+            // Add transaction record
+            ContentValues transactionValues = new ContentValues();
+            transactionValues.put(COL_TRANSACTION_USER_EMAIL, userEmail);
+            transactionValues.put(COL_TRANSACTION_TYPE, "deposit");
+            transactionValues.put(COL_TRANSACTION_AMOUNT, amount);
+            transactionValues.put(COL_TRANSACTION_DESCRIPTION, description != null ? description : "Nạp tiền vào ví");
+            transactionValues.put(COL_TRANSACTION_DATE, new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault()).format(new java.util.Date()));
+            db.insert(TABLE_WALLET_TRANSACTIONS, null, transactionValues);
+            
+            db.setTransactionSuccessful();
+            return true;
+        } catch (Exception e) {
+            android.util.Log.e("DatabaseHelper", "Error depositing to wallet: " + e.getMessage());
+            return false;
+        } finally {
+            db.endTransaction();
+        }
+    }
+    
+    /**
+     * Withdraw money from wallet
+     */
+    public boolean withdrawFromWallet(String userEmail, double amount, String description) {
+        SQLiteDatabase db = this.getWritableDatabase();
+        
+        try {
+            db.beginTransaction();
+            
+            // Get current balance
+            double currentBalance = getWalletBalance(userEmail);
+            
+            if (currentBalance < amount) {
+                return false; // Insufficient balance
+            }
+            
+            double newBalance = currentBalance - amount;
+            
+            // Update wallet balance
+            ContentValues walletValues = new ContentValues();
+            walletValues.put(COL_WALLET_BALANCE, newBalance);
+            walletValues.put(COL_WALLET_UPDATED_AT, new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault()).format(new java.util.Date()));
+            
+            int updated = db.update(TABLE_WALLET, walletValues,
+                    COL_WALLET_USER_EMAIL + " = ?",
+                    new String[]{userEmail});
+            
+            if (updated == 0) {
+                return false;
+            }
+            
+            // Add transaction record
+            ContentValues transactionValues = new ContentValues();
+            transactionValues.put(COL_TRANSACTION_USER_EMAIL, userEmail);
+            transactionValues.put(COL_TRANSACTION_TYPE, "withdraw");
+            transactionValues.put(COL_TRANSACTION_AMOUNT, amount);
+            transactionValues.put(COL_TRANSACTION_DESCRIPTION, description != null ? description : "Rút tiền từ ví");
+            transactionValues.put(COL_TRANSACTION_DATE, new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault()).format(new java.util.Date()));
+            db.insert(TABLE_WALLET_TRANSACTIONS, null, transactionValues);
+            
+            db.setTransactionSuccessful();
+            return true;
+        } catch (Exception e) {
+            android.util.Log.e("DatabaseHelper", "Error withdrawing from wallet: " + e.getMessage());
+            return false;
+        } finally {
+            db.endTransaction();
+        }
+    }
+    
+    /**
+     * Pay using wallet
+     */
+    public boolean payWithWallet(String userEmail, double amount, String description) {
+        return withdrawFromWallet(userEmail, amount, description != null ? description : "Thanh toán đặt vé");
+    }
+    
+    /**
+     * Get wallet transactions
+     */
+    public List<ContentValues> getWalletTransactions(String userEmail, int limit) {
+        List<ContentValues> transactions = new ArrayList<>();
+        SQLiteDatabase db = this.getReadableDatabase();
+        
+        Cursor cursor = db.query(TABLE_WALLET_TRANSACTIONS,
+                null,
+                COL_TRANSACTION_USER_EMAIL + " = ?",
+                new String[]{userEmail},
+                null, null,
+                COL_TRANSACTION_DATE + " DESC",
+                limit > 0 ? String.valueOf(limit) : null);
+        
+        if (cursor != null) {
+            while (cursor.moveToNext()) {
+                ContentValues values = new ContentValues();
+                for (String column : cursor.getColumnNames()) {
+                    int index = cursor.getColumnIndex(column);
+                    if (index >= 0) {
+                        int type = cursor.getType(index);
+                        switch (type) {
+                            case Cursor.FIELD_TYPE_INTEGER:
+                                values.put(column, cursor.getLong(index));
+                                break;
+                            case Cursor.FIELD_TYPE_FLOAT:
+                                values.put(column, cursor.getDouble(index));
+                                break;
+                            case Cursor.FIELD_TYPE_STRING:
+                                values.put(column, cursor.getString(index));
+                                break;
+                        }
+                    }
+                }
+                transactions.add(values);
+            }
+            cursor.close();
+        }
+        
+        return transactions;
     }
 }
 

@@ -6,11 +6,11 @@
 
     <LinearLayout
         android:id="@+id/seatContainer"
-        android:layout_width="50dp"
+        android:layout_width="40dp"
         android:layout_height="wrap_content"
         android:orientation="vertical"
         android:gravity="center"
-        android:padding="8dp"
+        android:padding="4dp"
         android:background="@drawable/bg_seat_standard">
 
         <TextView
@@ -18,7 +18,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="A1"
-            android:textSize="12sp"
+            android:textSize="10sp"
             android:textStyle="bold"
             android:textColor="@color/text_primary"
             android:gravity="center" />
@@ -28,18 +28,18 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:text="VIP"
-            android:textSize="10sp"
+            android:textSize="8sp"
             android:textStyle="bold"
             android:textColor="@color/text_primary"
             android:gravity="center"
             android:visibility="gone"
-            android:layout_marginTop="4dp" />
+            android:layout_marginTop="2dp" />
 
         <View
             android:id="@+id/seatIndicator"
-            android:layout_width="20dp"
-            android:layout_height="8dp"
-            android:layout_marginTop="4dp"
+            android:layout_width="16dp"
+            android:layout_height="6dp"
+            android:layout_marginTop="2dp"
             android:background="@drawable/bg_seat_standard"
             android:visibility="visible" />
 
@@ -47,13 +47,14 @@
 
     <View
         android:id="@+id/selectedIndicator"
-        android:layout_width="58dp"
-        android:layout_height="58dp"
+        android:layout_width="48dp"
+        android:layout_height="48dp"
         android:layout_gravity="center"
         android:background="@drawable/bg_seat_pair_selected"
         android:visibility="gone" />
 
 </FrameLayout>
+
 
 
 

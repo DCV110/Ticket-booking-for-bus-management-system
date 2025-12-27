@@ -110,7 +110,7 @@
                             android:layout_weight="1"
                             android:text="Đổi mật khẩu"
                             android:textSize="16sp"
-                            android:textColor="@color/text_primary" />
+                        android:textColor="@color/text_primary" />
 
                         <ImageView
                             android:layout_width="24dp"
@@ -136,9 +136,9 @@
                         android:clickable="true"
                         android:focusable="true">
 
-                        <TextView
+                    <TextView
                             android:layout_width="0dp"
-                            android:layout_height="wrap_content"
+                        android:layout_height="wrap_content"
                             android:layout_weight="1"
                             android:text="Đăng xuất"
                             android:textSize="16sp"
@@ -215,7 +215,7 @@
                             android:layout_weight="1"
                             android:text="Nhắc nhở trước giờ khởi hành"
                             android:textSize="16sp"
-                            android:textColor="@color/text_primary" />
+                        android:textColor="@color/text_primary" />
 
                         <androidx.appcompat.widget.SwitchCompat
                             android:id="@+id/switchReminderNotification"
@@ -236,7 +236,7 @@
                         android:gravity="center_vertical"
                         android:padding="12dp">
 
-                        <TextView
+                    <TextView
                             android:layout_width="0dp"
                             android:layout_height="wrap_content"
                             android:layout_weight="1"
@@ -246,7 +246,7 @@
 
                         <androidx.appcompat.widget.SwitchCompat
                             android:id="@+id/switchPromotionNotification"
-                            android:layout_width="wrap_content"
+                        android:layout_width="wrap_content"
                             android:layout_height="wrap_content" />
                     </LinearLayout>
 
@@ -265,7 +265,7 @@
 
                         <TextView
                             android:layout_width="0dp"
-                            android:layout_height="wrap_content"
+                        android:layout_height="wrap_content"
                             android:layout_weight="1"
                             android:text="Âm thanh thông báo"
                             android:textSize="16sp"
@@ -406,15 +406,15 @@
                             android:layout_weight="1"
                             android:text="Định dạng ngày"
                             android:textSize="16sp"
-                            android:textColor="@color/text_primary" />
+                        android:textColor="@color/text_primary" />
 
-                        <TextView
+                    <TextView
                             android:id="@+id/tvDateFormatValue"
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
                             android:text="dd/MM/yyyy"
                             android:textSize="16sp"
-                            android:textColor="@color/text_secondary"
+                        android:textColor="@color/text_secondary"
                             android:layout_marginEnd="8dp" />
 
                         <ImageView

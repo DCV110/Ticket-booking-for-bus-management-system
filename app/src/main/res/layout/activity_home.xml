@@ -224,13 +224,16 @@
 
             <!-- Journey Card 1 -->
             <androidx.cardview.widget.CardView
-                android:id="@+id/cardJourney1"
+                android:id="@+id/btnJourney1"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="16dp"
-                app:cardCornerRadius="12dp"
+                android:clickable="true"
+                android:focusable="true"
+                android:foreground="?android:attr/selectableItemBackground"
                 app:cardElevation="4dp"
-                app:cardBackgroundColor="@color/white"
+                app:cardCornerRadius="12dp"
+                app:cardBackgroundColor="@android:color/white"
                 app:layout_constraintTop_toBottomOf="@id/tvUpcomingJourney"
                 app:layout_constraintStart_toStartOf="parent"
                 app:layout_constraintEnd_toEndOf="parent">
@@ -262,6 +265,7 @@
                         android:layout_marginStart="16dp">
 
                         <TextView
+                            android:id="@+id/tvJourney1Terminal"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:text="Bến xe 1"
@@ -270,6 +274,7 @@
                             android:textColor="@color/text_primary" />
 
                         <TextView
+                            android:id="@+id/tvJourney1From"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:text="Từ: Quận 1"
@@ -278,6 +283,7 @@
                             android:layout_marginTop="4dp" />
 
                         <TextView
+                            android:id="@+id/tvJourney1To"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:text="Đến: Quận 3"
@@ -302,6 +308,7 @@
                             android:textColor="@color/white" />
 
                         <TextView
+                            android:id="@+id/tvJourney1Time"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:text="9:00, CN"
@@ -311,6 +318,7 @@
                             android:layout_marginTop="4dp" />
 
                         <TextView
+                            android:id="@+id/tvJourney1Date"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:text="08/12/2024"
@@ -324,14 +332,17 @@
 
             <!-- Journey Card 2 -->
             <androidx.cardview.widget.CardView
-                android:id="@+id/cardJourney2"
+                android:id="@+id/btnJourney2"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="12dp"
-                app:cardCornerRadius="12dp"
+                android:clickable="true"
+                android:focusable="true"
+                android:foreground="?android:attr/selectableItemBackground"
                 app:cardElevation="4dp"
-                app:cardBackgroundColor="@color/white"
-                app:layout_constraintTop_toBottomOf="@id/cardJourney1"
+                app:cardCornerRadius="12dp"
+                app:cardBackgroundColor="@android:color/white"
+                app:layout_constraintTop_toBottomOf="@id/btnJourney1"
                 app:layout_constraintStart_toStartOf="parent"
                 app:layout_constraintEnd_toEndOf="parent">
 
@@ -362,6 +373,7 @@
                         android:layout_marginStart="16dp">
 
                         <TextView
+                            android:id="@+id/tvJourney2Terminal"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:text="Bến xe 2"
@@ -370,6 +382,7 @@
                             android:textColor="@color/text_primary" />
 
                         <TextView
+                            android:id="@+id/tvJourney2From"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:text="Từ: Quận 5"
@@ -378,6 +391,7 @@
                             android:layout_marginTop="4dp" />
 
                         <TextView
+                            android:id="@+id/tvJourney2To"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:text="Đến: Quận 6"
@@ -402,6 +416,7 @@
                             android:textColor="@color/white" />
 
                         <TextView
+                            android:id="@+id/tvJourney2Time"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:text="14:00, CN"
@@ -411,6 +426,7 @@
                             android:layout_marginTop="4dp" />
 
                         <TextView
+                            android:id="@+id/tvJourney2Date"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:text="08/12/2024"

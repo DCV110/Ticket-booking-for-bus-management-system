@@ -166,23 +166,22 @@ public class SelectBusActivity extends AppCompatActivity {
             android.widget.Toast.makeText(this, "Không tìm thấy chuyến xe. Vui lòng chọn địa điểm hợp lệ.", android.widget.Toast.LENGTH_LONG).show();
         }
         
-        // Filter unique schedules by route_number and departure_time to avoid duplicates
+        // Collect all schedules (no filtering by route_number - show all available schedules)
         java.util.List<java.util.Map<String, Object>> uniqueSchedules = new java.util.ArrayList<>();
-        java.util.Set<String> seenKeys = new java.util.HashSet<>();
+        java.util.Set<Long> seenScheduleIds = new java.util.HashSet<>();
         
         if (cursor != null && cursor.moveToFirst()) {
             do {
                 try {
-                    int routeNumber = cursor.getInt(1);
-                    String departureTime = cursor.getString(2);
-                    String key = routeNumber + "_" + departureTime;
+                    long scheduleId = cursor.getLong(0);
                     
-                    if (!seenKeys.contains(key)) {
-                        seenKeys.add(key);
+                    // Only filter by schedule_id to avoid exact duplicates
+                    if (!seenScheduleIds.contains(scheduleId)) {
+                        seenScheduleIds.add(scheduleId);
                         java.util.Map<String, Object> schedule = new java.util.HashMap<>();
-                        schedule.put("schedule_id", cursor.getLong(0));
-                        schedule.put("route_number", routeNumber);
-                        schedule.put("departure_time", departureTime);
+                        schedule.put("schedule_id", scheduleId);
+                        schedule.put("route_number", cursor.getInt(1));
+                        schedule.put("departure_time", cursor.getString(2));
                         schedule.put("arrival_time", cursor.getString(3));
                         schedule.put("price", cursor.getDouble(4));
                         schedule.put("bus_type", cursor.getString(5));
@@ -197,10 +196,10 @@ public class SelectBusActivity extends AppCompatActivity {
             } while (cursor.moveToNext());
         }
         
-        android.util.Log.d("SelectBusActivity", "Unique schedules after filtering: " + uniqueSchedules.size());
+        android.util.Log.d("SelectBusActivity", "Total schedules found: " + uniqueSchedules.size());
         
         // Update bus cards with database data - show all available schedules
-        // Support up to 4 bus cards (can be extended later)
+        // Use all 4 fixed cards to display schedules
         int[] cardIds = {R.id.cardBus1, R.id.cardBus2, R.id.cardBus3, R.id.cardBus4};
         int[] buttonIds = {R.id.btnSelectBus1, R.id.btnSelectBus2, R.id.btnSelectBus3, R.id.btnSelectBus4};
         
@@ -331,7 +330,7 @@ public class SelectBusActivity extends AppCompatActivity {
             }
             
             // Format time for display
-            String timeDisplay = formatTime(departureTime) + " - " + formatTime(arrivalTime);
+            String timeDisplay = DateTimeHelper.formatTime12Hour(departureTime) + " - " + DateTimeHelper.formatTime12Hour(arrivalTime);
             
             // Update card content using findViewById within the card
             CardView card = (CardView) cardView;
@@ -365,7 +364,7 @@ public class SelectBusActivity extends AppCompatActivity {
                 if (priceLayout != null) {
                     TextView tvPrice = (TextView) priceLayout.getChildAt(0);
                     if (tvPrice != null) {
-                        tvPrice.setText(String.format("%.0f", price) + " VNĐ");
+                        tvPrice.setText(CurrencyHelper.formatPrice(price));
                     }
                     TextView tvBusType = (TextView) priceLayout.getChildAt(1);
                     if (tvBusType != null) {
@@ -385,9 +384,10 @@ public class SelectBusActivity extends AppCompatActivity {
                     }
                 }
                 
-                TextView tvSeats = findTextViewInLayout(cardLayout, 3);
+                // Update seats left - look for the text containing "Ghế còn lại" or "Seats left"
+                TextView tvSeats = findTextViewByName(cardLayout, "Ghế còn lại", "Seats left");
                 if (tvSeats != null) {
-                    tvSeats.setText(availableSeats + " Seats left");
+                    tvSeats.setText(availableSeats + " Ghế còn lại");
                     if (availableSeats < 5) {
                         tvSeats.setTextColor(getColor(R.color.red));
                     } else if (availableSeats < 15) {
@@ -420,15 +420,16 @@ public class SelectBusActivity extends AppCompatActivity {
             if (btn != null) {
                 // Remove any existing listeners
                 btn.setOnClickListener(null);
+                btn.setText("Chọn"); // Consistently use Vietnamese
                 
                 btn.setOnClickListener(v -> {
                     try {
-                        android.util.Log.d("SelectBusActivity", "Button clicked for schedule ID: " + scheduleId + ", Route: " + routeNumber);
+                        android.util.Log.d("SelectBusActivity", "Button clicked! Schedule ID: " + scheduleId + ", Time: " + departureTime + ", Seats: " + availableSeats);
                         Intent intent = new Intent(SelectBusActivity.this, ChooseSeatActivity.class);
                         intent.putExtra("from_location", fromLocation);
                         intent.putExtra("to_location", toLocation);
                         intent.putExtra("schedule_id", scheduleId);
-                        intent.putExtra("route_number", routeNumber); // Pass route number instead of company name
+                        intent.putExtra("route_number", routeNumber);
                         intent.putExtra("price", price);
                         intent.putExtra("departure_time", departureTime);
                         intent.putExtra("arrival_time", arrivalTime);
@@ -441,7 +442,7 @@ public class SelectBusActivity extends AppCompatActivity {
                         android.widget.Toast.makeText(this, "Lỗi khi mở màn hình chọn ghế: " + e.getMessage(), android.widget.Toast.LENGTH_SHORT).show();
                     }
                 });
-                android.util.Log.d("SelectBusActivity", "Button listener set for button ID: " + buttonId);
+                android.util.Log.d("SelectBusActivity", "Button listener set for: Tuyến " + routeNumber + " (" + departureTime + ")");
             } else {
                 android.util.Log.e("SelectBusActivity", "Button not found with ID: " + buttonId);
             }
@@ -496,7 +497,7 @@ public class SelectBusActivity extends AppCompatActivity {
             }
             
             // Format time for display
-            String timeDisplay = formatTime(departureTime) + " - " + formatTime(arrivalTime);
+            String timeDisplay = DateTimeHelper.formatTime12Hour(departureTime) + " - " + DateTimeHelper.formatTime12Hour(arrivalTime);
             
             // Update card content using findViewById within the card
             CardView card = (CardView) cardView;
@@ -530,7 +531,7 @@ public class SelectBusActivity extends AppCompatActivity {
                 if (priceLayout != null) {
                     TextView tvPrice = (TextView) priceLayout.getChildAt(0);
                     if (tvPrice != null) {
-                        tvPrice.setText(String.format("%.0f", price) + " VNĐ");
+                        tvPrice.setText(CurrencyHelper.formatPrice(price));
                     }
                     TextView tvBusType = (TextView) priceLayout.getChildAt(1);
                     if (tvBusType != null) {
@@ -550,9 +551,10 @@ public class SelectBusActivity extends AppCompatActivity {
                     }
                 }
                 
-                TextView tvSeats = findTextViewInLayout(cardLayout, 3);
+                // Update seats left - look for the text containing "Ghế còn lại" or "Seats left"
+                TextView tvSeats = findTextViewByName(cardLayout, "Ghế còn lại", "Seats left");
                 if (tvSeats != null) {
-                    tvSeats.setText(availableSeats + " Seats left");
+                    tvSeats.setText(availableSeats + " Ghế còn lại");
                     if (availableSeats < 5) {
                         tvSeats.setTextColor(getColor(R.color.red));
                     } else if (availableSeats < 15) {
@@ -599,6 +601,7 @@ public class SelectBusActivity extends AppCompatActivity {
                         intent.putExtra("departure_time", departureTime);
                         intent.putExtra("arrival_time", arrivalTime);
                         intent.putExtra("bus_type", busType);
+                        intent.putExtra("available_seats", availableSeats);
                         intent.putExtra("schedule_date", selectedDate);
                         startActivity(intent);
                     } catch (Exception e) {
@@ -666,18 +669,7 @@ public class SelectBusActivity extends AppCompatActivity {
         return null;
     }
     
-    private String formatTime(String time) {
-        try {
-            String[] parts = time.split(":");
-            int hour = Integer.parseInt(parts[0]);
-            int minute = Integer.parseInt(parts[1]);
-            String period = hour >= 12 ? "PM" : "AM";
-            int displayHour = hour > 12 ? hour - 12 : (hour == 0 ? 12 : hour);
-            return String.format("%d:%02d %s", displayHour, minute, period);
-        } catch (Exception e) {
-            return time;
-        }
-    }
+    // Use DateTimeHelper utility methods instead of duplicate code
 
     @Override
     protected void onDestroy() {

@@ -104,7 +104,7 @@
                         android:id="@+id/tvCompanyName"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="Perera Travels"
+                        android:text="EasyBus"
                         android:textSize="18sp"
                         android:textStyle="bold"
                         android:textColor="@color/text_primary" />

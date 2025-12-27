@@ -38,7 +38,7 @@
             android:id="@+id/tvUpcomingJourney"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="Hành trình của tôi"
+            android:text="Hành trình sắp tới"
             android:textSize="20sp"
             android:textStyle="bold"
             android:textColor="@color/text_primary"
@@ -59,11 +59,11 @@
             app:layout_constraintEnd_toEndOf="parent">
 
             <Button
-                android:id="@+id/btnAll"
+                android:id="@+id/btnUpcoming"
                 android:layout_width="0dp"
                 android:layout_height="36dp"
                 android:layout_weight="1"
-                android:text="Tất cả"
+                android:text="Chưa khởi hành"
                 android:textSize="12sp"
                 android:backgroundTint="@color/primary"
                 android:textColor="@android:color/white"
@@ -71,11 +71,11 @@
                 style="@style/Widget.MaterialComponents.Button" />
 
             <Button
-                android:id="@+id/btnUpcoming"
+                android:id="@+id/btnCompleted"
                 android:layout_width="0dp"
                 android:layout_height="36dp"
                 android:layout_weight="1"
-                android:text="Sắp khởi hành"
+                android:text="Đã khởi hành"
                 android:textSize="12sp"
                 android:backgroundTint="@android:color/transparent"
                 android:textColor="@color/text_secondary"
@@ -84,11 +84,11 @@
                 style="@style/Widget.MaterialComponents.Button.OutlinedButton" />
 
             <Button
-                android:id="@+id/btnCompleted"
+                android:id="@+id/btnCancelled"
                 android:layout_width="0dp"
                 android:layout_height="36dp"
                 android:layout_weight="1"
-                android:text="Đã hoàn thành"
+                android:text="Đã hủy"
                 android:textSize="12sp"
                 android:backgroundTint="@android:color/transparent"
                 android:textColor="@color/text_secondary"

@@ -49,19 +49,21 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:orientation="vertical"
-                    android:padding="16dp">
+                    android:padding="24dp"
+                    android:gravity="center">
 
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="Available Balance"
+                        android:text="Số dư khả dụng"
                         android:textSize="14sp"
                         android:textColor="@color/text_secondary" />
 
                     <TextView
+                        android:id="@+id/tvBalance"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="LKR 0.00"
+                        android:text="0 VNĐ"
                         android:textSize="32sp"
                         android:textStyle="bold"
                         android:textColor="@color/primary"
@@ -69,17 +71,60 @@
                 </LinearLayout>
             </androidx.cardview.widget.CardView>
 
+            <LinearLayout
+                android:id="@+id/llActionButtons"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:layout_marginTop="24dp"
+                app:layout_constraintTop_toBottomOf="@id/cardBalance"
+                app:layout_constraintStart_toStartOf="parent"
+                app:layout_constraintEnd_toEndOf="parent">
+
+                <Button
+                    android:id="@+id/btnDeposit"
+                    android:layout_width="0dp"
+                    android:layout_height="56dp"
+                    android:layout_weight="1"
+                    android:text="Nạp tiền"
+                    android:textSize="16sp"
+                    android:textStyle="bold"
+                    android:backgroundTint="@color/green"
+                    android:layout_marginEnd="8dp" />
+
+                <Button
+                    android:id="@+id/btnWithdraw"
+                    android:layout_width="0dp"
+                    android:layout_height="56dp"
+                    android:layout_weight="1"
+                    android:text="Rút tiền"
+                    android:textSize="16sp"
+                    android:textStyle="bold"
+                    android:backgroundTint="@color/primary"
+                    android:layout_marginStart="8dp" />
+            </LinearLayout>
+
             <TextView
-                android:id="@+id/tvPaymentHistory"
+                android:id="@+id/tvTransactionHistory"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="Payment History"
+                android:text="Lịch sử giao dịch"
                 android:textSize="18sp"
                 android:textStyle="bold"
                 android:textColor="@color/text_primary"
                 android:layout_marginTop="24dp"
-                app:layout_constraintTop_toBottomOf="@id/cardBalance"
+                app:layout_constraintTop_toBottomOf="@id/llActionButtons"
                 app:layout_constraintStart_toStartOf="parent" />
+
+            <androidx.recyclerview.widget.RecyclerView
+                android:id="@+id/rvTransactions"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                app:layout_constraintTop_toBottomOf="@id/tvTransactionHistory"
+                app:layout_constraintStart_toStartOf="parent"
+                app:layout_constraintEnd_toEndOf="parent"
+                tools:listitem="@layout/item_transaction" />
 
             <androidx.cardview.widget.CardView
                 android:id="@+id/cardNoHistory"
@@ -88,9 +133,10 @@
                 android:layout_marginTop="16dp"
                 app:cardCornerRadius="12dp"
                 app:cardElevation="4dp"
-                app:layout_constraintTop_toBottomOf="@id/tvPaymentHistory"
+                app:layout_constraintTop_toBottomOf="@id/tvTransactionHistory"
                 app:layout_constraintStart_toStartOf="parent"
-                app:layout_constraintEnd_toEndOf="parent">
+                app:layout_constraintEnd_toEndOf="parent"
+                android:visibility="gone">
 
                 <LinearLayout
                     android:layout_width="match_parent"
@@ -102,7 +148,7 @@
                     <TextView
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:text="No payment history"
+                        android:text="Chưa có giao dịch nào"
                         android:textSize="16sp"
                         android:textColor="@color/text_secondary" />
                 </LinearLayout>
@@ -121,11 +167,3 @@
         app:layout_constraintEnd_toEndOf="parent" />
 
 </androidx.constraintlayout.widget.ConstraintLayout>
-
-
-
-
-
-
-
-

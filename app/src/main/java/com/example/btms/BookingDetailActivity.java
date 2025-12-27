@@ -69,11 +69,23 @@ public class BookingDetailActivity extends AppCompatActivity {
             String seatNumbers = cursor.getString(cursor.getColumnIndexOrThrow("seat_numbers"));
             String passengerName = cursor.getString(cursor.getColumnIndexOrThrow("passenger_name"));
             
+            // Get booking code and route number
+            String bookingCode = null;
+            int routeNumber = 0;
+            try {
+                int codeIndex = cursor.getColumnIndex("booking_code");
+                if (codeIndex >= 0) bookingCode = cursor.getString(codeIndex);
+                int routeIndex = cursor.getColumnIndex("route_number");
+                if (routeIndex >= 0) routeNumber = cursor.getInt(routeIndex);
+            } catch (Exception e) {
+                android.util.Log.e("BookingDetailActivity", "Error getting booking_code or route_number: " + e.getMessage());
+            }
+            
             String shareText = "Thông tin đặt vé xe buýt\n\n" +
-                    "Mã đặt vé: #" + bookingId + "\n" +
-                    "Hãng xe: " + (companyName != null ? companyName : "N/A") + "\n" +
+                    "Mã đặt vé: " + (bookingCode != null && !bookingCode.isEmpty() ? bookingCode : "#" + bookingId) + "\n" +
+                    "Tuyến: " + (routeNumber > 0 ? "Tuyến số " + routeNumber : (companyName != null ? companyName : "N/A")) + "\n" +
                     "Tuyến: " + fromLocation + " → " + toLocation + "\n" +
-                    "Ngày: " + formatDate(scheduleDate) + "\n" +
+                    "Ngày: " + DateTimeHelper.formatDate(scheduleDate) + "\n" +
                     "Giờ khởi hành: " + departureTime + "\n" +
                     "Ghế: " + (seatNumbers != null ? seatNumbers : "N/A") + "\n" +
                     "Hành khách: " + (passengerName != null ? passengerName : "N/A") + "\n\n" +
@@ -157,31 +169,47 @@ public class BookingDetailActivity extends AppCompatActivity {
             String[] columnNames = cursor.getColumnNames();
             android.util.Log.d("BookingDetailActivity", "Available columns: " + java.util.Arrays.toString(columnNames));
 
-            // Generate and display QR code
+            // Generate and display QR code (will be done after getting booking_code)
+                
+            // Set booking ID and code
+            TextView tvBookingId = findViewById(R.id.tvBookingId);
+            String bookingCode = null;
             try {
-                generateQRCode(bookingId);
+                int bookingCodeIndex = cursor.getColumnIndex("booking_code");
+                if (bookingCodeIndex >= 0) {
+                    bookingCode = cursor.getString(bookingCodeIndex);
+                }
+            } catch (Exception e) {
+                android.util.Log.e("BookingDetailActivity", "Error getting booking_code: " + e.getMessage());
+            }
+            
+            if (tvBookingId != null) {
+                if (bookingCode != null && !bookingCode.isEmpty()) {
+                    tvBookingId.setText("Mã đặt vé: " + bookingCode);
+                } else {
+                    tvBookingId.setText("Mã đặt vé: #" + bookingId);
+                }
+            }
+            
+            // Generate and display QR code with full booking information
+            try {
+                generateQRCode(cursor);
             } catch (Exception e) {
                 android.util.Log.e("BookingDetailActivity", "Error generating QR code: " + e.getMessage(), e);
             }
                 
-            // Set booking ID
-            TextView tvBookingId = findViewById(R.id.tvBookingId);
-            if (tvBookingId != null) {
-                tvBookingId.setText("Mã đặt vé: #" + bookingId);
-            }
-                
-            // Bus Info - safely get company_name (may be null)
+            // Bus Info - get route_number instead of company_name
             TextView tvCompanyName = findViewById(R.id.tvCompanyName);
             TextView tvBusType = findViewById(R.id.tvBusType);
             
-            String companyName = null;
+            int routeNumber = 0;
             try {
-                int companyNameIndex = cursor.getColumnIndex("company_name");
-                if (companyNameIndex >= 0) {
-                    companyName = cursor.getString(companyNameIndex);
+                int routeNumberIndex = cursor.getColumnIndex("route_number");
+                if (routeNumberIndex >= 0) {
+                    routeNumber = cursor.getInt(routeNumberIndex);
                 }
             } catch (Exception e) {
-                android.util.Log.e("BookingDetailActivity", "Error getting company_name: " + e.getMessage());
+                android.util.Log.e("BookingDetailActivity", "Error getting route_number: " + e.getMessage());
             }
             
             String busType = null;
@@ -195,7 +223,11 @@ public class BookingDetailActivity extends AppCompatActivity {
             }
             
             if (tvCompanyName != null) {
-                tvCompanyName.setText(companyName != null && !companyName.isEmpty() ? companyName : "EASYBUS");
+                if (routeNumber > 0) {
+                    tvCompanyName.setText("Tuyến số " + routeNumber);
+                } else {
+                    tvCompanyName.setText("EASYBUS");
+                }
             }
             if (tvBusType != null) {
                 tvBusType.setText(busType != null && !busType.isEmpty() ? busType : "Tiêu chuẩn");
@@ -285,8 +317,8 @@ public class BookingDetailActivity extends AppCompatActivity {
 
             if (tvJourneyDate != null) {
                 try {
-                    String formattedDate = scheduleDate != null ? formatDate(scheduleDate) : "Chưa có";
-                    String dayOfWeek = scheduleDate != null ? getDayOfWeek(scheduleDate) : "";
+                    String formattedDate = scheduleDate != null ? DateTimeHelper.formatDate(scheduleDate) : "Chưa có";
+                    String dayOfWeek = scheduleDate != null ? DateTimeHelper.getDayOfWeekFull(scheduleDate) : "";
                     tvJourneyDate.setText("Ngày: " + formattedDate + (dayOfWeek.isEmpty() ? "" : ", " + dayOfWeek));
                 } catch (Exception e) {
                     android.util.Log.e("BookingDetailActivity", "Error formatting date: " + e.getMessage());
@@ -295,7 +327,7 @@ public class BookingDetailActivity extends AppCompatActivity {
             }
             if (tvDepartureTime != null) {
                 try {
-                    String timeText = departureTime != null ? formatTime12Hour(departureTime) : "Chưa có";
+                    String timeText = departureTime != null ? DateTimeHelper.formatTime12Hour(departureTime) : "Chưa có";
                     tvDepartureTime.setText("Giờ khởi hành: " + timeText);
                 } catch (Exception e) {
                     android.util.Log.e("BookingDetailActivity", "Error formatting departure time: " + e.getMessage());
@@ -304,7 +336,7 @@ public class BookingDetailActivity extends AppCompatActivity {
             }
             if (tvArrivalTime != null) {
                 try {
-                    String timeText = arrivalTime != null ? formatTime12Hour(arrivalTime) : "Chưa có";
+                    String timeText = arrivalTime != null ? DateTimeHelper.formatTime12Hour(arrivalTime) : "Chưa có";
                     tvArrivalTime.setText("Giờ đến: " + timeText);
                 } catch (Exception e) {
                     android.util.Log.e("BookingDetailActivity", "Error formatting arrival time: " + e.getMessage());
@@ -400,11 +432,11 @@ public class BookingDetailActivity extends AppCompatActivity {
             }
 
             if (tvTotalFare != null) {
-                tvTotalFare.setText("Tổng tiền: " + String.format("%.0f", totalFare) + " VNĐ");
+                tvTotalFare.setText("Tổng tiền: " + CurrencyHelper.formatPrice(totalFare));
             }
             if (tvBookingDate != null) {
                 try {
-                    String dateText = bookingDate != null ? formatDate(bookingDate) : "Chưa có";
+                    String dateText = bookingDate != null ? DateTimeHelper.formatDate(bookingDate) : "Chưa có";
                     tvBookingDate.setText("Ngày đặt vé: " + dateText);
                 } catch (Exception e) {
                     android.util.Log.e("BookingDetailActivity", "Error formatting booking date: " + e.getMessage());
@@ -443,50 +475,72 @@ public class BookingDetailActivity extends AppCompatActivity {
         }
     }
 
-    private String formatTime12Hour(String time24h) {
-        if (time24h == null || time24h.isEmpty()) {
-            return "Chưa có";
-        }
-        try {
-            SimpleDateFormat inputFormat = new SimpleDateFormat("HH:mm", Locale.getDefault());
-            SimpleDateFormat outputFormat = new SimpleDateFormat("h:mm a", Locale.getDefault());
-            Date date = inputFormat.parse(time24h);
-            if (date != null) {
-                return outputFormat.format(date);
-            }
-        } catch (ParseException e) {
-            android.util.Log.e("BookingDetailActivity", "Error parsing time: " + time24h, e);
-        }
-        return time24h;
-    }
+    // Use DateTimeHelper utility methods instead of duplicate code
 
-    private String getDayOfWeek(String dateStr) {
-        if (dateStr == null || dateStr.isEmpty()) {
-            return "";
-        }
-        try {
-            SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd", Locale.getDefault());
-            Date date = sdf.parse(dateStr);
-            if (date != null) {
-                Calendar cal = Calendar.getInstance();
-                cal.setTime(date);
-                int dayOfWeek = cal.get(Calendar.DAY_OF_WEEK);
-                String[] days = {"", "Chủ nhật", "Thứ hai", "Thứ ba", "Thứ tư", "Thứ năm", "Thứ sáu", "Thứ bảy"};
-                if (dayOfWeek >= 1 && dayOfWeek < days.length) {
-                    return days[dayOfWeek];
-                }
-            }
-        } catch (ParseException e) {
-            android.util.Log.e("BookingDetailActivity", "Error parsing date: " + dateStr, e);
-        }
-        return "";
-    }
-
-    private void generateQRCode(long bookingId) {
+    private void generateQRCode(Cursor cursor) {
         try {
             ImageView ivQRCode = findViewById(R.id.ivQRCode);
-            if (ivQRCode != null) {
-                String qrData = "BTMS_BOOKING_" + bookingId;
+            if (ivQRCode != null && cursor != null) {
+                // Get all booking information from cursor
+                String bookingCode = null;
+                int routeNumber = 0;
+                String fromLocation = null;
+                String toLocation = null;
+                String scheduleDate = null;
+                String departureTime = null;
+                String arrivalTime = null;
+                String seatNumbers = null;
+                String passengerName = null;
+                double totalFare = 0.0;
+                
+                try {
+                    int codeIndex = cursor.getColumnIndex("booking_code");
+                    if (codeIndex >= 0) bookingCode = cursor.getString(codeIndex);
+                    
+                    int routeIndex = cursor.getColumnIndex("route_number");
+                    if (routeIndex >= 0) routeNumber = cursor.getInt(routeIndex);
+                    
+                    int fromIndex = cursor.getColumnIndex("from_location");
+                    if (fromIndex >= 0) fromLocation = cursor.getString(fromIndex);
+                    
+                    int toIndex = cursor.getColumnIndex("to_location");
+                    if (toIndex >= 0) toLocation = cursor.getString(toIndex);
+                    
+                    int dateIndex = cursor.getColumnIndex("date");
+                    if (dateIndex >= 0) scheduleDate = cursor.getString(dateIndex);
+                    
+                    int depTimeIndex = cursor.getColumnIndex("departure_time");
+                    if (depTimeIndex >= 0) departureTime = cursor.getString(depTimeIndex);
+                    
+                    int arrTimeIndex = cursor.getColumnIndex("arrival_time");
+                    if (arrTimeIndex >= 0) arrivalTime = cursor.getString(arrTimeIndex);
+                    
+                    int seatIndex = cursor.getColumnIndex("seat_numbers");
+                    if (seatIndex >= 0) seatNumbers = cursor.getString(seatIndex);
+                    
+                    int nameIndex = cursor.getColumnIndex("passenger_name");
+                    if (nameIndex >= 0) passengerName = cursor.getString(nameIndex);
+                    
+                    int fareIndex = cursor.getColumnIndex("total_fare");
+                    if (fareIndex >= 0) totalFare = cursor.getDouble(fareIndex);
+                } catch (Exception e) {
+                    android.util.Log.e("BookingDetailActivity", "Error reading cursor data: " + e.getMessage());
+                }
+                
+                // Generate QR data with full information
+                String qrData = QRCodeDataHelper.generateQRDataText(
+                        bookingCode != null ? bookingCode : String.valueOf(bookingId),
+                        routeNumber,
+                        fromLocation,
+                        toLocation,
+                        scheduleDate,
+                        departureTime,
+                        arrivalTime,
+                        seatNumbers,
+                        passengerName,
+                        totalFare
+                );
+                
                 Bitmap qrBitmap = QRCodeHelper.generateQRCode(qrData, 400, 400);
                 if (qrBitmap != null) {
                     ivQRCode.setImageBitmap(qrBitmap);

@@ -27,6 +27,54 @@ public class TravellerInfoActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_traveller_info);
 
+        DatabaseHelper dbHelper = new DatabaseHelper(this);
+        
+        // Get user name from SharedPreferences or database
+        android.content.SharedPreferences sharedPreferences = getSharedPreferences("BTMS_PREFS", MODE_PRIVATE);
+        String userEmail = sharedPreferences.getString("user_email", null);
+        String userName = sharedPreferences.getString("user_name", null);
+        
+        // If name not in SharedPreferences, get from database
+        if (userName == null && userEmail != null) {
+            android.content.ContentValues userInfo = dbHelper.getUserInfo(userEmail);
+            if (userInfo != null && userInfo.containsKey("name")) {
+                userName = userInfo.getAsString("name");
+                // Save to SharedPreferences for future use
+                if (userName != null) {
+                    sharedPreferences.edit().putString("user_name", userName).apply();
+                }
+            }
+        }
+        
+        // Update greeting with user name
+        TextView tvGreeting = findViewById(R.id.tvGreeting);
+        if (tvGreeting != null) {
+            if (userName != null && !userName.isEmpty()) {
+                tvGreeting.setText("Xin chào " + userName + "!");
+            } else {
+                tvGreeting.setText("Xin chào!");
+            }
+        }
+        
+        // Update bus info card with route number
+        int routeNumber = getIntent().getIntExtra("route_number", 0);
+        String busType = getIntent().getStringExtra("bus_type");
+        String departureTime = getIntent().getStringExtra("departure_time");
+        String arrivalTime = getIntent().getStringExtra("arrival_time");
+        
+        TextView tvCompanyName = findViewById(R.id.tvCompanyName);
+        if (tvCompanyName != null && routeNumber > 0) {
+            tvCompanyName.setText("Tuyến số " + routeNumber);
+        }
+        
+        if (departureTime != null && arrivalTime != null) {
+            TextView tvDurationTime = findViewById(R.id.tvDurationTime);
+            if (tvDurationTime != null) {
+                String timeDisplay = DateTimeHelper.formatTime12Hour(departureTime) + " - " + DateTimeHelper.formatTime12Hour(arrivalTime);
+                tvDurationTime.setText(timeDisplay);
+            }
+        }
+
         // Get selected seats from intent
         selectedSeatsList = getIntent().getStringArrayListExtra("selected_seats");
         if (selectedSeatsList == null) {
@@ -35,6 +83,8 @@ public class TravellerInfoActivity extends AppCompatActivity {
 
         // Create passenger forms based on number of selected seats
         createPassengerForms();
+        
+        dbHelper.close();
 
         Button btnProceedToBook = findViewById(R.id.btnProceedToBook);
 
@@ -44,12 +94,32 @@ public class TravellerInfoActivity extends AppCompatActivity {
                 android.widget.Toast.makeText(this, "Vui lòng điền đầy đủ thông tin hành khách", android.widget.Toast.LENGTH_SHORT).show();
                 return;
             }
+            
+            // Validate contact information (email and phone)
+            com.google.android.material.textfield.TextInputEditText etEmail = findViewById(R.id.etEmail);
+            com.google.android.material.textfield.TextInputEditText etPhone = findViewById(R.id.etPhone);
+            
+            String contactEmail = null;
+            if (etEmail != null && etEmail.getText() != null) {
+                contactEmail = etEmail.getText().toString().trim();
+            }
+            
+            if (contactEmail == null || contactEmail.isEmpty()) {
+                android.widget.Toast.makeText(this, "Vui lòng nhập email để nhận vé", android.widget.Toast.LENGTH_SHORT).show();
+                return;
+            }
+            
+            // Basic email validation
+            if (!android.util.Patterns.EMAIL_ADDRESS.matcher(contactEmail).matches()) {
+                android.widget.Toast.makeText(this, "Email không hợp lệ", android.widget.Toast.LENGTH_SHORT).show();
+                return;
+            }
 
             // Get data from intent
             String fromLocation = getIntent().getStringExtra("from_location");
             String toLocation = getIntent().getStringExtra("to_location");
             long scheduleId = getIntent().getLongExtra("schedule_id", -1);
-            int routeNumber = getIntent().getIntExtra("route_number", 0);
+            // routeNumber already declared above, reuse it
             double price = getIntent().getDoubleExtra("price", 0);
             String boardingPoint = getIntent().getStringExtra("boarding_point");
             String dropPoint = getIntent().getStringExtra("drop_point");
@@ -74,6 +144,7 @@ public class TravellerInfoActivity extends AppCompatActivity {
             intent.putExtra("bus_type", getIntent().getStringExtra("bus_type"));
             intent.putExtra("schedule_date", getIntent().getStringExtra("schedule_date"));
             intent.putExtra("total_fare", getIntent().getDoubleExtra("total_fare", price));
+            intent.putExtra("contact_email", contactEmail); // Pass contact email from form
             
             // Pass passenger data
             intent.putStringArrayListExtra("passenger_names", getPassengerNames());

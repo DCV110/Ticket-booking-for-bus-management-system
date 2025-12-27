@@ -140,9 +140,9 @@ public class BookingHistoryActivity extends AppCompatActivity {
                     tvToLocation.setText(toLocation);
                 }
                 if (tvDepartureTime != null) {
-                    String timeStr = formatTime(departureTime);
-                    String dayStr = getDayOfWeek(scheduleDate);
-                    String dateStr = formatDate(scheduleDate);
+                    String timeStr = DateTimeHelper.formatTime(departureTime);
+                    String dayStr = DateTimeHelper.getDayOfWeek(scheduleDate);
+                    String dateStr = DateTimeHelper.formatDate(scheduleDate);
                     tvDepartureTime.setText(timeStr + ", " + dayStr + "\n" + dateStr);
                 }
                 if (tvSeatNumbers != null) {
@@ -196,50 +196,7 @@ public class BookingHistoryActivity extends AppCompatActivity {
         }
     }
 
-    private String formatTime(String time24h) {
-        try {
-            SimpleDateFormat inputFormat = new SimpleDateFormat("HH:mm", Locale.getDefault());
-            Date date = inputFormat.parse(time24h);
-            if (date != null) {
-                SimpleDateFormat outputFormat = new SimpleDateFormat("HH:mm", Locale.getDefault());
-                return outputFormat.format(date);
-            }
-        } catch (ParseException e) {
-            e.printStackTrace();
-        }
-        return time24h;
-    }
-
-    private String getDayOfWeek(String dateStr) {
-        try {
-            SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd", Locale.getDefault());
-            Date date = sdf.parse(dateStr);
-            if (date != null) {
-                Calendar cal = Calendar.getInstance();
-                cal.setTime(date);
-                int dayOfWeek = cal.get(Calendar.DAY_OF_WEEK);
-                String[] days = {"", "CN", "T2", "T3", "T4", "T5", "T6", "T7"};
-                return days[dayOfWeek];
-            }
-        } catch (ParseException e) {
-            e.printStackTrace();
-        }
-        return "";
-    }
-
-    private String formatDate(String dateStr) {
-        try {
-            SimpleDateFormat inputFormat = new SimpleDateFormat("yyyy-MM-dd", Locale.getDefault());
-            SimpleDateFormat outputFormat = new SimpleDateFormat("dd/MM/yyyy", Locale.getDefault());
-            Date date = inputFormat.parse(dateStr);
-            if (date != null) {
-                return outputFormat.format(date);
-            }
-        } catch (ParseException e) {
-            e.printStackTrace();
-        }
-        return dateStr;
-    }
+    // Use DateTimeHelper utility methods instead of duplicate code
 
     @Override
     protected void onDestroy() {

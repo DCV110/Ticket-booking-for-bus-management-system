@@ -18,7 +18,7 @@ import java.util.Locale;
 public class UpcomingJourneyActivity extends AppCompatActivity {
 
     private DatabaseHelper dbHelper;
-    private String currentFilter = "all"; // all, upcoming, completed
+    private String currentFilter = "upcoming"; // upcoming, completed, cancelled
     private String userEmail;
 
     @Override
@@ -42,40 +42,41 @@ public class UpcomingJourneyActivity extends AppCompatActivity {
         // Setup filter tabs
         setupFilterTabs();
         
-        loadUpcomingJourneys(userEmail, currentFilter);
+        // Load user bookings (actual tickets purchased by user)
+        loadUserBookings();
 
         // Setup bottom navigation
         View rootView = findViewById(android.R.id.content);
         BottomNavHelper.setupBottomNav(rootView, R.id.navTicket);
         BottomNavHelper.setupBottomNavListeners(this, rootView);
     }
-    
+
     private void setupFilterTabs() {
-        android.widget.Button btnAll = findViewById(R.id.btnAll);
         android.widget.Button btnUpcoming = findViewById(R.id.btnUpcoming);
         android.widget.Button btnCompleted = findViewById(R.id.btnCompleted);
-        
-        if (btnAll != null) {
-            btnAll.setOnClickListener(v -> {
-                currentFilter = "all";
-                updateFilterButtons(btnAll, btnUpcoming, btnCompleted);
-                loadUpcomingJourneys(userEmail, currentFilter);
-            });
-        }
+        android.widget.Button btnCancelled = findViewById(R.id.btnCancelled);
         
         if (btnUpcoming != null) {
             btnUpcoming.setOnClickListener(v -> {
                 currentFilter = "upcoming";
-                updateFilterButtons(btnUpcoming, btnAll, btnCompleted);
-                loadUpcomingJourneys(userEmail, currentFilter);
+                updateFilterButtons(btnUpcoming, btnCompleted, btnCancelled);
+                loadUserBookings();
             });
         }
         
         if (btnCompleted != null) {
             btnCompleted.setOnClickListener(v -> {
                 currentFilter = "completed";
-                updateFilterButtons(btnCompleted, btnAll, btnUpcoming);
-                loadUpcomingJourneys(userEmail, currentFilter);
+                updateFilterButtons(btnCompleted, btnUpcoming, btnCancelled);
+                loadUserBookings();
+            });
+        }
+        
+        if (btnCancelled != null) {
+            btnCancelled.setOnClickListener(v -> {
+                currentFilter = "cancelled";
+                updateFilterButtons(btnCancelled, btnUpcoming, btnCompleted);
+                loadUserBookings();
             });
         }
     }
@@ -92,7 +93,7 @@ public class UpcomingJourneyActivity extends AppCompatActivity {
         }
     }
 
-    private void loadUpcomingJourneys(String userEmail, String filter) {
+    private void loadUserBookings() {
         LinearLayout bookingsContainer = findViewById(R.id.llBookingsContainer);
         if (bookingsContainer == null) {
             android.util.Log.e("UpcomingJourneyActivity", "llBookingsContainer is null");
@@ -104,6 +105,13 @@ public class UpcomingJourneyActivity extends AppCompatActivity {
         
         Cursor cursor = null;
         try {
+            // Get user bookings (actual tickets purchased by user)
+            if (userEmail == null || userEmail.isEmpty()) {
+                android.util.Log.e("UpcomingJourneyActivity", "User email is null or empty");
+                showEmptyMessage(bookingsContainer, "Vui lòng đăng nhập để xem vé của bạn");
+                return;
+            }
+            
             cursor = dbHelper.getUserBookingsWithDetails(userEmail);
             
             if (cursor == null) {
@@ -113,7 +121,7 @@ public class UpcomingJourneyActivity extends AppCompatActivity {
             }
             
             if (!cursor.moveToFirst()) {
-                showEmptyMessage(bookingsContainer, "Bạn chưa có chuyến đi nào");
+                showEmptyMessage(bookingsContainer, "Bạn chưa có vé nào. Hãy đặt vé để xem ở đây!");
                 cursor.close();
                 return;
             }
@@ -135,19 +143,24 @@ public class UpcomingJourneyActivity extends AppCompatActivity {
                     TextView tvStatus = bookingCard.findViewById(R.id.tvStatus);
                     android.widget.Button btnViewDetails = bookingCard.findViewById(R.id.btnViewDetails);
                     
-                    // Get booking ID for click listener - safely
+                    // Get booking ID and schedule ID for click listener
                     long bookingId = -1;
+                    long scheduleId = -1;
                     try {
                         int bookingIdIndex = cursor.getColumnIndex("booking_id");
                         if (bookingIdIndex >= 0) {
                             bookingId = cursor.getLong(bookingIdIndex);
                         }
+                        int scheduleIdIndex = cursor.getColumnIndex("schedule_id");
+                        if (scheduleIdIndex >= 0) {
+                            scheduleId = cursor.getLong(scheduleIdIndex);
+                        }
                     } catch (Exception e) {
-                        android.util.Log.e("UpcomingJourneyActivity", "Error getting booking_id: " + e.getMessage());
+                        android.util.Log.e("UpcomingJourneyActivity", "Error getting booking_id/schedule_id: " + e.getMessage());
                     }
                     
                     if (bookingId == -1) {
-                        android.util.Log.w("UpcomingJourneyActivity", "Skipping booking with invalid ID");
+                        android.util.Log.w("UpcomingJourneyActivity", "Skipping booking with invalid booking ID");
                         continue;
                     }
                     
@@ -158,6 +171,10 @@ public class UpcomingJourneyActivity extends AppCompatActivity {
                     String departureTime = null;
                     String arrivalTime = null;
                     String scheduleDate = null;
+                    double price = 0;
+                    String busType = null;
+                    int routeNumber = 0;
+                    int availableSeats = 0;
                     String boardingPoint = null;
                     String seatNumbers = null;
                     
@@ -204,39 +221,81 @@ public class UpcomingJourneyActivity extends AppCompatActivity {
                     }
                     
                     try {
-                        int boardingIndex = cursor.getColumnIndex("boarding_point");
-                        if (boardingIndex >= 0) boardingPoint = cursor.getString(boardingIndex);
+                        int priceIndex = cursor.getColumnIndex("price");
+                        if (priceIndex >= 0) price = cursor.getDouble(priceIndex);
+                    } catch (Exception e) {
+                        android.util.Log.e("UpcomingJourneyActivity", "Error getting price: " + e.getMessage());
+                    }
+                    
+                    try {
+                        int busTypeIndex = cursor.getColumnIndex("bus_type");
+                        if (busTypeIndex >= 0) busType = cursor.getString(busTypeIndex);
+                    } catch (Exception e) {
+                        android.util.Log.e("UpcomingJourneyActivity", "Error getting bus_type: " + e.getMessage());
+                    }
+                    
+                    try {
+                        int routeNumberIndex = cursor.getColumnIndex("route_number");
+                        if (routeNumberIndex >= 0) routeNumber = cursor.getInt(routeNumberIndex);
+                    } catch (Exception e) {
+                        android.util.Log.e("UpcomingJourneyActivity", "Error getting route_number: " + e.getMessage());
+                    }
+                    
+                    try {
+                        int availableSeatsIndex = cursor.getColumnIndex("available_seats");
+                        if (availableSeatsIndex >= 0) availableSeats = cursor.getInt(availableSeatsIndex);
+                    } catch (Exception e) {
+                        android.util.Log.e("UpcomingJourneyActivity", "Error getting available_seats: " + e.getMessage());
+                    }
+                    
+                    // Get booking-specific information
+                    try {
+                        int boardingPointIndex = cursor.getColumnIndex("boarding_point");
+                        if (boardingPointIndex >= 0) boardingPoint = cursor.getString(boardingPointIndex);
                     } catch (Exception e) {
                         android.util.Log.e("UpcomingJourneyActivity", "Error getting boarding_point: " + e.getMessage());
                     }
                     
                     try {
-                        int seatIndex = cursor.getColumnIndex("seat_numbers");
-                        if (seatIndex >= 0) seatNumbers = cursor.getString(seatIndex);
+                        int seatNumbersIndex = cursor.getColumnIndex("seat_numbers");
+                        if (seatNumbersIndex >= 0) seatNumbers = cursor.getString(seatNumbersIndex);
                     } catch (Exception e) {
                         android.util.Log.e("UpcomingJourneyActivity", "Error getting seat_numbers: " + e.getMessage());
                     }
                     
-                    // Get status if available (may not be in old query)
-                    String status = null;
+                    // Get route number from cursor
+                    try {
+                        int routeNumberIndex = cursor.getColumnIndex("route_number");
+                        if (routeNumberIndex >= 0) routeNumber = cursor.getInt(routeNumberIndex);
+                    } catch (Exception e) {
+                        android.util.Log.e("UpcomingJourneyActivity", "Error getting route_number: " + e.getMessage());
+                    }
+                    
+                    // Get status from database first, then calculate if needed
+                    String dbStatus = null;
                     try {
                         int statusIndex = cursor.getColumnIndex("status");
                         if (statusIndex >= 0) {
-                            status = cursor.getString(statusIndex);
+                            dbStatus = cursor.getString(statusIndex);
                         }
                     } catch (Exception e) {
                         android.util.Log.e("UpcomingJourneyActivity", "Error getting status: " + e.getMessage());
                     }
                     
-                    // If status is null, calculate from date/time
-                    if (status == null || status.isEmpty()) {
+                    // Determine final status: if cancelled, keep it; otherwise calculate from date/time
+                    String status;
+                    if (dbStatus != null && dbStatus.equalsIgnoreCase("cancelled")) {
+                        // Keep cancelled status
+                        status = "cancelled";
+                    } else {
+                        // For "confirmed" or any other status, calculate actual journey status from date/time
                         status = determineJourneyStatus(scheduleDate, departureTime, arrivalTime);
                     }
                     
-                    // Set terminal name (use company name or "Bến xe X")
+                    // Set terminal name (use route number or "Bến xe X")
                     if (tvTerminalName != null) {
-                        if (companyName != null && !companyName.isEmpty()) {
-                            tvTerminalName.setText(companyName);
+                        if (routeNumber > 0) {
+                            tvTerminalName.setText("Tuyến số " + routeNumber);
                         } else {
                             tvTerminalName.setText("Bến xe " + terminalCounter);
                         }
@@ -253,9 +312,9 @@ public class UpcomingJourneyActivity extends AppCompatActivity {
                     // Format departure time and date
                     if (tvDepartureTime != null) {
                         try {
-                            String timeStr = departureTime != null ? formatTime(departureTime) : "Chưa có";
-                            String dayStr = scheduleDate != null ? getDayOfWeek(scheduleDate) : "";
-                            String dateStr = scheduleDate != null ? formatDate(scheduleDate) : "Chưa có";
+                            String timeStr = departureTime != null ? DateTimeHelper.formatTime(departureTime) : "Chưa có";
+                            String dayStr = scheduleDate != null ? DateTimeHelper.getDayOfWeek(scheduleDate) : "";
+                            String dateStr = scheduleDate != null ? DateTimeHelper.formatDate(scheduleDate) : "Chưa có";
                             tvDepartureTime.setText(timeStr + ", " + dayStr + "\n" + dateStr);
                         } catch (Exception e) {
                             android.util.Log.e("UpcomingJourneyActivity", "Error formatting time/date: " + e.getMessage());
@@ -263,49 +322,62 @@ public class UpcomingJourneyActivity extends AppCompatActivity {
                         }
                     }
                     
-                    // Set seat numbers
+                    // Set seat numbers (from actual booking)
                     if (tvSeatNumbers != null) {
                         if (seatNumbers != null && !seatNumbers.isEmpty()) {
                             tvSeatNumbers.setText("Ghế: " + seatNumbers);
                         } else {
-                            tvSeatNumbers.setText("Ghế: Chưa chọn");
+                            tvSeatNumbers.setText("Ghế: --");
                         }
                     }
                     
-                    // Set boarding point
+                    // Set boarding point (from actual booking)
                     if (tvBoardingPoint != null) {
                         if (boardingPoint != null && !boardingPoint.isEmpty()) {
                             tvBoardingPoint.setText("Điểm đón: " + boardingPoint);
                         } else {
-                            tvBoardingPoint.setText("Điểm đón: Chưa chọn");
+                            tvBoardingPoint.setText("Điểm đón: --");
                         }
                     }
                     
                     // Set status view
                     setStatusView(tvStatus, status);
                     
-                    // Filter logic
+                    // Filter logic: Show bookings based on status
+                    // upcoming = chưa khởi hành (before departure time)
+                    // completed = đã khởi hành (after departure time, includes ongoing and completed)
+                    // cancelled = đã hủy
                     boolean shouldShow = false;
-                    if (filter.equals("all")) {
-                        shouldShow = true;
-                    } else if (filter.equals("upcoming") && status != null && (status.equals("upcoming") || status.equals("ongoing"))) {
-                        shouldShow = true;
-                    } else if (filter.equals("completed") && status != null && status.equals("completed")) {
-                        shouldShow = true;
+                    if (currentFilter.equals("upcoming")) {
+                        // Chưa khởi hành: chỉ hiển thị status = "upcoming" (trước thời gian khởi hành)
+                        if (status != null && status.equals("upcoming") && !status.equalsIgnoreCase("cancelled")) {
+                            shouldShow = true;
+                        }
+                    } else if (currentFilter.equals("completed")) {
+                        // Đã khởi hành: hiển thị cả "ongoing" (đang diễn ra) và "completed" (đã hoàn thành)
+                        // Tức là đã qua thời gian khởi hành
+                        if (status != null && (status.equals("ongoing") || status.equals("completed")) && !status.equalsIgnoreCase("cancelled")) {
+                            shouldShow = true;
+                        }
+                    } else if (currentFilter.equals("cancelled")) {
+                        // Đã hủy: status is cancelled
+                        if (status != null && status.equalsIgnoreCase("cancelled")) {
+                            shouldShow = true;
+                        }
                     }
                     
                     if (shouldShow) {
-                        // Create final variable for lambda
+                        // Create final variables for lambda
                         final long finalBookingId = bookingId;
                         
-                        // Set click listeners
+                        // For user bookings, clicking will open BookingDetailActivity to view ticket details
                         bookingCard.setOnClickListener(v -> {
                             try {
                                 android.content.Intent intent = new android.content.Intent(UpcomingJourneyActivity.this, BookingDetailActivity.class);
                                 intent.putExtra("booking_id", finalBookingId);
                                 startActivity(intent);
                             } catch (Exception e) {
-                                android.util.Log.e("UpcomingJourneyActivity", "Error opening booking details: " + e.getMessage(), e);
+                                android.util.Log.e("UpcomingJourneyActivity", "Error opening BookingDetailActivity: " + e.getMessage(), e);
                                 android.widget.Toast.makeText(UpcomingJourneyActivity.this, "Không thể mở chi tiết vé", android.widget.Toast.LENGTH_SHORT).show();
                             }
                         });
@@ -317,7 +389,7 @@ public class UpcomingJourneyActivity extends AppCompatActivity {
                                     intent.putExtra("booking_id", finalBookingId);
                                     startActivity(intent);
                                 } catch (Exception e) {
-                                    android.util.Log.e("UpcomingJourneyActivity", "Error opening booking details: " + e.getMessage(), e);
+                                    android.util.Log.e("UpcomingJourneyActivity", "Error opening BookingDetailActivity: " + e.getMessage(), e);
                                     android.widget.Toast.makeText(UpcomingJourneyActivity.this, "Không thể mở chi tiết vé", android.widget.Toast.LENGTH_SHORT).show();
                                 }
                             });
@@ -336,14 +408,22 @@ public class UpcomingJourneyActivity extends AppCompatActivity {
             
             // Show message if no items
             if (!hasVisibleItems) {
-                showEmptyMessage(bookingsContainer, "Không có chuyến đi nào");
+                if (currentFilter.equals("upcoming")) {
+                    showEmptyMessage(bookingsContainer, "Bạn chưa có vé nào chưa khởi hành");
+                } else if (currentFilter.equals("completed")) {
+                    showEmptyMessage(bookingsContainer, "Bạn chưa có vé nào đã khởi hành");
+                } else if (currentFilter.equals("cancelled")) {
+                    showEmptyMessage(bookingsContainer, "Bạn chưa có vé nào đã hủy");
+                } else {
+                    showEmptyMessage(bookingsContainer, "Bạn chưa có vé nào. Hãy đặt vé để xem ở đây!");
+                }
             }
         } catch (Exception e) {
             android.util.Log.e("UpcomingJourneyActivity", "Error loading bookings: " + e.getMessage(), e);
             showEmptyMessage(bookingsContainer, "Lỗi khi tải dữ liệu");
         } finally {
-            if (cursor != null && !cursor.isClosed()) {
-                cursor.close();
+        if (cursor != null && !cursor.isClosed()) {
+            cursor.close();
             }
         }
     }
@@ -359,19 +439,7 @@ public class UpcomingJourneyActivity extends AppCompatActivity {
         container.addView(tvEmpty);
     }
     
-    private String formatTime(String time24h) {
-        try {
-            SimpleDateFormat inputFormat = new SimpleDateFormat("HH:mm", Locale.getDefault());
-            Date date = inputFormat.parse(time24h);
-            if (date != null) {
-                SimpleDateFormat outputFormat = new SimpleDateFormat("HH:mm", Locale.getDefault());
-                return outputFormat.format(date);
-            }
-        } catch (ParseException e) {
-            e.printStackTrace();
-        }
-        return time24h;
-    }
+    // Use DateTimeHelper utility methods instead of duplicate code
     
     private String determineJourneyStatus(String scheduleDate, String departureTime, String arrivalTime) {
         try {
@@ -426,55 +494,31 @@ public class UpcomingJourneyActivity extends AppCompatActivity {
     private void setStatusView(TextView tvStatus, String status) {
         if (tvStatus == null) return;
         
-        switch (status) {
-            case "upcoming":
-                tvStatus.setText("Sắp khởi hành");
-                tvStatus.setBackgroundResource(R.drawable.bg_status_upcoming);
-                break;
-            case "ongoing":
-                tvStatus.setText("Đang diễn ra");
-                tvStatus.setBackgroundResource(R.drawable.bg_status_ongoing);
-                break;
-            case "completed":
-                tvStatus.setText("Đã hoàn thành");
-                tvStatus.setBackgroundResource(R.drawable.bg_status_completed);
-                break;
-            default:
-                tvStatus.setText("Sắp khởi hành");
-                tvStatus.setBackgroundResource(R.drawable.bg_status_upcoming);
+        if (status != null && status.equalsIgnoreCase("cancelled")) {
+            tvStatus.setText("Đã hủy");
+            tvStatus.setBackgroundResource(R.drawable.bg_status_cancelled);
+        } else {
+            switch (status) {
+                case "upcoming":
+                    tvStatus.setText("Sắp khởi hành");
+                    tvStatus.setBackgroundResource(R.drawable.bg_status_upcoming);
+                    break;
+                case "ongoing":
+                    tvStatus.setText("Đang diễn ra");
+                    tvStatus.setBackgroundResource(R.drawable.bg_status_ongoing);
+                    break;
+                case "completed":
+                    tvStatus.setText("Đã hoàn thành");
+                    tvStatus.setBackgroundResource(R.drawable.bg_status_completed);
+                    break;
+                default:
+                    tvStatus.setText("Sắp khởi hành");
+                    tvStatus.setBackgroundResource(R.drawable.bg_status_upcoming);
+            }
         }
     }
     
-    private String getDayOfWeek(String dateStr) {
-        try {
-            SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd", Locale.getDefault());
-            Date date = sdf.parse(dateStr);
-            if (date != null) {
-                Calendar cal = Calendar.getInstance();
-                cal.setTime(date);
-                int dayOfWeek = cal.get(Calendar.DAY_OF_WEEK);
-                String[] days = {"", "CN", "T2", "T3", "T4", "T5", "T6", "T7"};
-                return days[dayOfWeek];
-            }
-        } catch (ParseException e) {
-            e.printStackTrace();
-        }
-        return "";
-    }
-    
-    private String formatDate(String dateStr) {
-        try {
-            SimpleDateFormat inputFormat = new SimpleDateFormat("yyyy-MM-dd", Locale.getDefault());
-            SimpleDateFormat outputFormat = new SimpleDateFormat("dd/MM/yyyy", Locale.getDefault());
-            Date date = inputFormat.parse(dateStr);
-            if (date != null) {
-                return outputFormat.format(date);
-            }
-        } catch (ParseException e) {
-            e.printStackTrace();
-        }
-        return dateStr;
-    }
+    // Use DateTimeHelper utility methods instead of duplicate code
 
     @Override
     protected void onDestroy() {

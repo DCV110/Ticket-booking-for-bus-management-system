@@ -32,8 +32,10 @@ public class ChooseSeatActivity extends AppCompatActivity {
     private int availableSeats;
 
     private final List<String> selectedSeats = new ArrayList<>();
-    private final String[] bookedSeats = {"B3", "C5", "A8", "B10", "C12"}; // sample booked seats
+    private final List<String> bookedSeats = new ArrayList<>(); // Actual booked seats from database
+    private final List<String> virtualBookedSeats = new ArrayList<>(); // Virtual booked seats to match available_seats count
     private final Map<String, View> seatViews = new HashMap<>(); // Map seat ID to view
+    private final List<String> allSeatIds = new ArrayList<>(); // All seat IDs in order
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -79,6 +81,18 @@ public class ChooseSeatActivity extends AppCompatActivity {
         arrivalTime = getIntent().getStringExtra("arrival_time");
         busType = getIntent().getStringExtra("bus_type");
         availableSeats = getIntent().getIntExtra("available_seats", 0);
+        String scheduleDate = getIntent().getStringExtra("schedule_date");
+        
+        android.util.Log.d("ChooseSeatActivity", "Received from Intent: ID=" + scheduleId + ", Seats: " + availableSeats + ", Date: " + scheduleDate);
+        
+        // Refresh availableSeats from database to ensure sync
+        if (scheduleId != -1) {
+            int latestAvailable = dbHelper.getScheduleAvailableSeats(scheduleId);
+            android.util.Log.d("ChooseSeatActivity", "Latest available from DB: " + latestAvailable);
+            if (latestAvailable > 0) {
+                availableSeats = latestAvailable;
+            }
+        }
         
         // Update route display
         android.widget.TextView tvRoute = findViewById(R.id.tvRoute);
@@ -92,22 +106,24 @@ public class ChooseSeatActivity extends AppCompatActivity {
         android.widget.TextView tvBusType = findViewById(R.id.tvBusType);
         android.widget.TextView tvDurationTime = findViewById(R.id.tvDurationTime);
         android.widget.TextView tvSeatsLeft = findViewById(R.id.tvSeatsLeft);
+        android.widget.TextView tvDate = findViewById(R.id.tvDate);
+
+        if (tvDate != null && scheduleDate != null) {
+            tvDate.setText(DateTimeHelper.formatDateForDisplay(scheduleDate) + " | " + DateTimeHelper.getDayOfWeekFull(scheduleDate));
+        }
 
         if (tvCompanyName != null) {
             tvCompanyName.setText("Tuyến số " + routeNumber);
         }
         if (tvPrice != null) {
-            tvPrice.setText(String.format("%.0f", price) + " VNĐ");
+            tvPrice.setText(CurrencyHelper.formatPrice(price));
         }
         if (tvBusType != null && busType != null) {
             tvBusType.setText(busType);
         }
         if (tvDurationTime != null) {
-            String durationText = "";
-            if (departureTime != null && arrivalTime != null) {
-                durationText = departureTime + " - " + arrivalTime;
-            }
-            tvDurationTime.setText(durationText.isEmpty() ? "Schedule" : durationText);
+            String timeDisplay = DateTimeHelper.formatTime12Hour(departureTime) + " - " + DateTimeHelper.formatTime12Hour(arrivalTime);
+            tvDurationTime.setText(timeDisplay);
         }
         if (tvSeatsLeft != null) {
             if (availableSeats > 0) {
@@ -118,6 +134,8 @@ public class ChooseSeatActivity extends AppCompatActivity {
                 tvSeatsLeft.setTextColor(getColor(R.color.text_secondary));
             }
         }
+        
+        updateSummary(); // Initial summary update
         
         // Get street names for boarding point (from district) and drop point (to district)
         String fromCity = fromLocation.split(",")[0].trim();
@@ -157,28 +175,32 @@ public class ChooseSeatActivity extends AppCompatActivity {
             if (hasFocus) actvDropPoint.showDropDown();
         });
 
-        // Create seats according to new design
-        // Tầng 1: VIP seats (A1, B1, C1, A3, B3, C3, A5, B5, C5) and standard seats (A7-C9, last row: A11, A13, B11, C11, C13)
+        // Get actual booked seats from database for this schedule
+        loadBookedSeats();
+        
+        // Calculate virtual booked seats to match available_seats count
+        calculateVirtualBookedSeats();
+        
+        // Create seats according to new design - 28 seats total (14 per floor)
+        // Tầng 1: VIP seats (A1, B1, C1, A3, B3, C3, A5, B5, C5) and standard seats (A7, B7, C7, last row: A9, B9)
         String[] floor1MainSeats = {
             "A1", "B1", "C1",  // Row 1 - VIP
             "A3", "B3", "C3",  // Row 2 - VIP
             "A5", "B5", "C5",  // Row 3 - VIP
-            "A7", "B7", "C7",  // Row 4 - Standard
-            "A9", "B9", "C9"   // Row 5 - Standard
+            "A7", "B7", "C7"   // Row 4 - Standard
         };
-        String[] floor1LastRow = {"A11", "A13", "B11", "C11", "C13"}; // Row 6 - Standard (5 seats)
+        String[] floor1LastRow = {"A9", "B9"}; // Row 5 - Standard (2 seats)
         LinearLayout lastRowFloor1 = findViewById(R.id.lastRowFloor1);
         createSeats(gridSeatsFloor1, lastRowFloor1, floor1MainSeats, floor1LastRow, true);
         
-        // Tầng 2: All seats (A2-C10, last row: A12, A14, B12, C12, C14)
+        // Tầng 2: All seats (A2-C8, last row: A10, B10)
         String[] floor2MainSeats = {
             "A2", "B2", "C2",  // Row 1
             "A4", "B4", "C4",  // Row 2
             "A6", "B6", "C6",  // Row 3
-            "A8", "B8", "C8",  // Row 4
-            "A10", "B10", "C10"  // Row 5
+            "A8", "B8", "C8"   // Row 4
         };
-        String[] floor2LastRow = {"A12", "A14", "B12", "C12", "C14"}; // Row 6 (5 seats)
+        String[] floor2LastRow = {"A10", "B10"}; // Row 5 (2 seats)
         LinearLayout lastRowFloor2 = findViewById(R.id.lastRowFloor2);
         createSeats(gridSeatsFloor2, lastRowFloor2, floor2MainSeats, floor2LastRow, false);
 
@@ -195,8 +217,6 @@ public class ChooseSeatActivity extends AppCompatActivity {
                 android.widget.Toast.makeText(this, "Please select at least one seat", android.widget.Toast.LENGTH_SHORT).show();
                 return;
             }
-            
-            String scheduleDate = getIntent().getStringExtra("schedule_date");
             
             Intent intent = new Intent(ChooseSeatActivity.this, TravellerInfoActivity.class);
             intent.putExtra("from_location", fromLocation);
@@ -228,13 +248,68 @@ public class ChooseSeatActivity extends AppCompatActivity {
         super.onDestroy();
     }
 
+    private void calculateVirtualBookedSeats() {
+        virtualBookedSeats.clear();
+        
+        // Calculate total seats and required booked seats
+        final int TOTAL_SEATS = 28;
+        int requiredBookedSeats = TOTAL_SEATS - availableSeats; // If 34 available, need 6 booked
+        int actualBookedInDb = bookedSeats.size();
+        
+        android.util.Log.d("ChooseSeatActivity", "Total seats: " + TOTAL_SEATS + ", Available: " + availableSeats + 
+            ", Required booked: " + requiredBookedSeats + ", Actual booked in DB: " + actualBookedInDb);
+        
+        // If DB doesn't have enough booked seats, we need to "virtually book" some seats
+        // to match the available_seats count
+        int virtualBookedNeeded = Math.max(0, requiredBookedSeats - actualBookedInDb);
+        
+        if (virtualBookedNeeded > 0) {
+            // Collect ALL seat IDs (both floors) - 28 seats total
+            List<String> allSeatIdsList = new ArrayList<>();
+            String[] floor1MainSeats = {"A1", "B1", "C1", "A3", "B3", "C3", "A5", "B5", "C5", "A7", "B7", "C7"};
+            String[] floor1LastRow = {"A9", "B9"};
+            String[] floor2MainSeats = {"A2", "B2", "C2", "A4", "B4", "C4", "A6", "B6", "C6", "A8", "B8", "C8"};
+            String[] floor2LastRow = {"A10", "B10"};
+            
+            for (String seatId : floor1MainSeats) allSeatIdsList.add(seatId);
+            for (String seatId : floor1LastRow) allSeatIdsList.add(seatId);
+            for (String seatId : floor2MainSeats) allSeatIdsList.add(seatId);
+            for (String seatId : floor2LastRow) allSeatIdsList.add(seatId);
+            
+            // Create a list of unbooked seats that we can "virtually book"
+            List<String> unbookedSeats = new ArrayList<>();
+            for (String seatId : allSeatIdsList) {
+                if (!isSeatBooked(seatId)) {
+                    unbookedSeats.add(seatId);
+                }
+            }
+            
+            // Randomly select seats to "virtually book" to match the count
+            java.util.Collections.shuffle(unbookedSeats);
+            for (int i = 0; i < Math.min(virtualBookedNeeded, unbookedSeats.size()); i++) {
+                virtualBookedSeats.add(unbookedSeats.get(i));
+            }
+            
+            android.util.Log.d("ChooseSeatActivity", "Virtual booked seats needed: " + virtualBookedNeeded + 
+                ", Actually virtual booking: " + virtualBookedSeats.size() + " seats: " + virtualBookedSeats);
+        }
+    }
+    
     private void createSeats(GridLayout gridLayout, LinearLayout lastRowLayout, String[] mainSeatIds, String[] lastRowSeatIds, boolean isFloor1) {
         LayoutInflater inflater = LayoutInflater.from(this);
         
-        // Create main seats (5 rows x 3 columns = 15 seats)
+        // Helper function to check if a seat is booked (either in DB or virtually)
+        java.util.function.Function<String, Boolean> isSeatBookedOrVirtual = (seatId) -> {
+            return isSeatBooked(seatId) || virtualBookedSeats.contains(seatId);
+        };
+        
+        // Create main seats (4 rows x 3 columns = 12 seats)
         for (int i = 0; i < mainSeatIds.length; i++) {
             String seatId = mainSeatIds[i];
-            View seatView = createSeatView(inflater, seatId, isFloor1, i < 9); // First 9 are VIP on floor 1
+            boolean isBooked = isSeatBookedOrVirtual.apply(seatId);
+            boolean isSelectable = !isBooked; // All non-booked seats are selectable
+            
+            View seatView = createSeatView(inflater, seatId, isFloor1, i < 9, isSelectable, isBooked); // First 9 seats (3 rows) are VIP
             
             // Set GridLayout params
             int row = i / 3;
@@ -244,22 +319,25 @@ public class ChooseSeatActivity extends AppCompatActivity {
             params.height = GridLayout.LayoutParams.WRAP_CONTENT;
             params.columnSpec = GridLayout.spec(col, 1f);
             params.rowSpec = GridLayout.spec(row);
-            params.setMargins(4, 4, 4, 4);
+            params.setMargins(2, 2, 2, 2);
             seatView.setLayoutParams(params);
             
             gridLayout.addView(seatView);
             seatViews.put(seatId, seatView);
         }
         
-        // Create last row seats (5 seats in horizontal LinearLayout)
+        // Create last row seats (2 seats in horizontal LinearLayout)
         if (lastRowSeatIds.length > 0) {
             lastRowLayout.setVisibility(View.VISIBLE);
             for (String seatId : lastRowSeatIds) {
-                View seatView = createSeatView(inflater, seatId, isFloor1, false); // Last row seats are not VIP
+                boolean isBooked = isSeatBookedOrVirtual.apply(seatId);
+                boolean isSelectable = !isBooked;
+                
+                View seatView = createSeatView(inflater, seatId, isFloor1, false, isSelectable, isBooked);
                 
                 LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                     0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
-                params.setMargins(4, 4, 4, 4);
+                params.setMargins(2, 2, 2, 2);
                 seatView.setLayoutParams(params);
                 
                 lastRowLayout.addView(seatView);
@@ -267,8 +345,8 @@ public class ChooseSeatActivity extends AppCompatActivity {
             }
         }
     }
-    
-    private View createSeatView(LayoutInflater inflater, String seatId, boolean isFloor1, boolean isVip) {
+
+    private View createSeatView(LayoutInflater inflater, String seatId, boolean isFloor1, boolean isVip, boolean isAvailable, boolean isBooked) {
         View seatView = inflater.inflate(R.layout.item_seat, null);
         
         LinearLayout container = seatView.findViewById(R.id.seatContainer);
@@ -277,9 +355,6 @@ public class ChooseSeatActivity extends AppCompatActivity {
         View seatIndicator = seatView.findViewById(R.id.seatIndicator);
         
         tvSeatNumber.setText(seatId);
-        
-        // Check if seat is booked
-        boolean isBooked = isSeatBooked(seatId);
         
         // Apply color based on floor and status
         if (isBooked) {
@@ -322,11 +397,13 @@ public class ChooseSeatActivity extends AppCompatActivity {
             }
         }
         
-        // Set click listener
-        if (!isBooked) {
+        // Set click listener - only allow clicking if seat is available (not booked)
+        if (!isBooked && isAvailable) {
             seatView.setOnClickListener(v -> {
                 toggleSeatSelection(seatId);
             });
+        } else {
+            seatView.setEnabled(false);
         }
         
         return seatView;
@@ -351,22 +428,75 @@ public class ChooseSeatActivity extends AppCompatActivity {
         updateSummary();
     }
     
+    private void loadBookedSeats() {
+        bookedSeats.clear();
+        if (scheduleId <= 0) {
+            android.util.Log.w("ChooseSeatActivity", "Invalid schedule ID, cannot load booked seats");
+            return;
+        }
+        
+        try {
+            List<String> seats = dbHelper.getBookedSeatsForSchedule(scheduleId);
+            if (seats != null) {
+                bookedSeats.addAll(seats);
+                android.util.Log.d("ChooseSeatActivity", "Actually loaded " + bookedSeats.size() + " booked seats from DB: " + bookedSeats);
+            }
+        } catch (Exception e) {
+            android.util.Log.e("ChooseSeatActivity", "Error loading booked seats: " + e.getMessage(), e);
+        }
+    }
+    
     private boolean isSeatBooked(String seatId) {
         for (String booked : bookedSeats) {
             if (booked.equals(seatId)) return true;
         }
         return false;
     }
+    
+    private boolean shouldShowSeat(String seatId, int currentAvailableCount) {
+        // If seat is booked, don't show it
+        if (isSeatBooked(seatId)) {
+            return false;
+        }
+        
+        // Count how many available seats we've shown so far
+        int shownAvailableCount = 0;
+        for (String seat : allSeatIds) {
+            if (seat.equals(seatId)) {
+                // We've reached this seat, check if we should show it
+                return shownAvailableCount < availableSeats;
+            }
+            if (!isSeatBooked(seat)) {
+                shownAvailableCount++;
+            }
+        }
+        
+        return false;
+    }
 
     private void updateSummary() {
         android.widget.TextView tvSeatsValue = findViewById(R.id.tvSeatsValue);
         android.widget.TextView tvTotalFare = findViewById(R.id.tvTotalFare);
+        android.widget.TextView tvSeatsLeft = findViewById(R.id.tvSeatsLeft);
+        
         if (tvSeatsValue != null) {
             tvSeatsValue.setText(selectedSeats.isEmpty() ? "-" : selectedSeats.toString().replace("[", "").replace("]", ""));
         }
+        
         if (tvTotalFare != null) {
             double total = selectedSeats.size() * price;
-            tvTotalFare.setText(String.format("%.0f", total) + " VNĐ");
+            tvTotalFare.setText(CurrencyHelper.formatPrice(total));
+        }
+        
+        if (tvSeatsLeft != null) {
+            int currentLeft = availableSeats - selectedSeats.size();
+            if (currentLeft >= 0) {
+                tvSeatsLeft.setText(currentLeft + " Seats left");
+                tvSeatsLeft.setTextColor(getColor(R.color.green));
+            } else {
+                tvSeatsLeft.setText("0 Seats left");
+                tvSeatsLeft.setTextColor(getColor(R.color.red));
+            }
         }
     }
 }

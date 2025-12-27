@@ -150,3 +150,4 @@ public class TermsActivity extends AppCompatActivity {
 
 
 
+

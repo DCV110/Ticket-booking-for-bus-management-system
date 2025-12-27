@@ -84,7 +84,7 @@ public class StatisticsActivity extends AppCompatActivity {
             tvTotalBookings.setText(String.valueOf(totalBookings));
         }
         if (tvTotalSpent != null) {
-            tvTotalSpent.setText(String.format(Locale.getDefault(), "%.0f VNĐ", totalSpent));
+            tvTotalSpent.setText(CurrencyHelper.formatPrice(totalSpent));
         }
         if (tvConfirmedBookings != null) {
             tvConfirmedBookings.setText(String.valueOf(confirmedCount));

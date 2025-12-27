@@ -50,7 +50,7 @@ public class NotificationHelper {
 
         String title = "Đặt vé thành công!";
         String message = String.format("Chuyến đi từ %s đến %s\nKhởi hành: %s ngày %s", 
-                fromLocation, toLocation, departureTime, formatDateForDisplay(date));
+                fromLocation, toLocation, departureTime, DateTimeHelper.formatDateForDisplay(date));
 
         Intent intent = new Intent(context, BookingDetailActivity.class);
         intent.putExtra("booking_id", -1); // Will be set by caller if needed
@@ -139,7 +139,7 @@ public class NotificationHelper {
 
         String title = "Nhắc nhở: Chuyến xe sắp khởi hành!";
         String message = String.format("Chuyến đi từ %s đến %s sẽ khởi hành lúc %s ngày %s\nCòn 30 phút nữa!", 
-                fromLocation, toLocation, departureTime, formatDateForDisplay(date));
+                fromLocation, toLocation, departureTime, DateTimeHelper.formatDateForDisplay(date));
 
         Intent intent = new Intent(context, BookingDetailActivity.class);
         intent.putExtra("booking_id", bookingId);
@@ -164,20 +164,9 @@ public class NotificationHelper {
         }
     }
 
-    private static String formatDateForDisplay(String dateStr) {
-        try {
-            SimpleDateFormat inputFormat = new SimpleDateFormat("yyyy-MM-dd", Locale.getDefault());
-            SimpleDateFormat outputFormat = new SimpleDateFormat("dd/MM/yyyy", Locale.getDefault());
-            Date date = inputFormat.parse(dateStr);
-            if (date != null) {
-                return outputFormat.format(date);
-            }
-        } catch (ParseException e) {
-            e.printStackTrace();
-        }
-        return dateStr;
-    }
+    // Use DateTimeHelper utility methods instead of duplicate code
 }
+
 
 
 

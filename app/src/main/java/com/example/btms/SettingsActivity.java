@@ -254,7 +254,7 @@ public class SettingsActivity extends AppCompatActivity {
         }
 
         if (tvTotalSpent != null) {
-            tvTotalSpent.setText(String.format(Locale.getDefault(), "%.0f VNĐ", totalSpent));
+            tvTotalSpent.setText(CurrencyHelper.formatPrice(totalSpent));
         }
 
         // Booking History
