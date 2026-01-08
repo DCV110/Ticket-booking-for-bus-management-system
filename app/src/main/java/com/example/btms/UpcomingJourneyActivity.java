@@ -42,7 +42,15 @@ public class UpcomingJourneyActivity extends AppCompatActivity {
         // Setup filter tabs
         setupFilterTabs();
         
-        // Load user bookings (actual tickets purchased by user)
+        // Initialize filter button states (set "Chưa khởi hành" as active by default)
+        android.widget.Button btnUpcoming = findViewById(R.id.btnUpcoming);
+        android.widget.Button btnCompleted = findViewById(R.id.btnCompleted);
+        android.widget.Button btnCancelled = findViewById(R.id.btnCancelled);
+        if (btnUpcoming != null) {
+            updateFilterButtons(btnUpcoming, btnCompleted, btnCancelled);
+        }
+        
+        // Load user bookings (chưa khởi hành by default)
         loadUserBookings();
 
         // Setup bottom navigation
@@ -60,7 +68,7 @@ public class UpcomingJourneyActivity extends AppCompatActivity {
             btnUpcoming.setOnClickListener(v -> {
                 currentFilter = "upcoming";
                 updateFilterButtons(btnUpcoming, btnCompleted, btnCancelled);
-                loadUserBookings();
+                loadUserBookings(); // Show user's upcoming bookings (chưa khởi hành)
             });
         }
         
@@ -68,7 +76,7 @@ public class UpcomingJourneyActivity extends AppCompatActivity {
             btnCompleted.setOnClickListener(v -> {
                 currentFilter = "completed";
                 updateFilterButtons(btnCompleted, btnUpcoming, btnCancelled);
-                loadUserBookings();
+                loadUserBookings(); // Show user's completed bookings
             });
         }
         
@@ -76,19 +84,260 @@ public class UpcomingJourneyActivity extends AppCompatActivity {
             btnCancelled.setOnClickListener(v -> {
                 currentFilter = "cancelled";
                 updateFilterButtons(btnCancelled, btnUpcoming, btnCompleted);
-                loadUserBookings();
+                loadUserBookings(); // Show user's cancelled bookings
             });
         }
     }
     
     private void updateFilterButtons(android.widget.Button activeBtn, android.widget.Button... otherBtns) {
-        activeBtn.setBackgroundTintList(android.content.res.ColorStateList.valueOf(getColor(R.color.primary)));
-        activeBtn.setTextColor(android.graphics.Color.WHITE);
+        // Get all buttons first
+        android.widget.Button btnUpcoming = findViewById(R.id.btnUpcoming);
+        android.widget.Button btnCompleted = findViewById(R.id.btnCompleted);
+        android.widget.Button btnCancelled = findViewById(R.id.btnCancelled);
         
-        for (android.widget.Button btn : otherBtns) {
-            if (btn != null) {
-                btn.setBackgroundTintList(android.content.res.ColorStateList.valueOf(android.graphics.Color.TRANSPARENT));
-                btn.setTextColor(getColor(R.color.text_secondary));
+        // Reset ALL buttons first - set all to inactive state
+        if (btnUpcoming != null) {
+            btnUpcoming.setBackgroundResource(R.drawable.bg_filter_button_inactive);
+            btnUpcoming.setTextColor(getColor(R.color.text_secondary));
+        }
+        if (btnCompleted != null) {
+            btnCompleted.setBackgroundResource(R.drawable.bg_filter_button_inactive);
+            btnCompleted.setTextColor(getColor(R.color.text_secondary));
+        }
+        if (btnCancelled != null) {
+            btnCancelled.setBackgroundResource(R.drawable.bg_filter_button_inactive);
+            btnCancelled.setTextColor(getColor(R.color.text_secondary));
+        }
+        
+        // Then set active button
+        if (activeBtn != null) {
+            activeBtn.setBackgroundResource(R.drawable.bg_filter_button_active);
+            activeBtn.setTextColor(android.graphics.Color.WHITE);
+        }
+    }
+
+    private void loadUpcomingSchedules() {
+        LinearLayout bookingsContainer = findViewById(R.id.llBookingsContainer);
+        if (bookingsContainer == null) {
+            android.util.Log.e("UpcomingJourneyActivity", "llBookingsContainer is null");
+            return;
+        }
+        
+        // Clear existing views
+        bookingsContainer.removeAllViews();
+        
+        Cursor cursor = null;
+        try {
+            // Get upcoming schedules (available trips to book)
+            cursor = dbHelper.getSuggestedJourneys(10); // Get up to 10 upcoming schedules
+            
+            if (cursor == null) {
+                android.util.Log.e("UpcomingJourneyActivity", "Cursor is null");
+                showEmptyMessage(bookingsContainer, "Không thể tải dữ liệu");
+                return;
+            }
+            
+            if (!cursor.moveToFirst()) {
+                showEmptyMessage(bookingsContainer, "Không có chuyến xe sắp tới. Vui lòng thử lại sau!");
+                if (cursor != null && !cursor.isClosed()) {
+                    cursor.close();
+                }
+                return;
+            }
+            
+            boolean hasVisibleItems = false;
+            LayoutInflater inflater = LayoutInflater.from(this);
+            
+            int terminalCounter = 1;
+            do {
+                try {
+                    View scheduleCard = inflater.inflate(R.layout.item_booking_card, bookingsContainer, false);
+                    
+                    TextView tvTerminalName = scheduleCard.findViewById(R.id.tvTerminalName);
+                    TextView tvFromLocation = scheduleCard.findViewById(R.id.tvFromLocation);
+                    TextView tvToLocation = scheduleCard.findViewById(R.id.tvToLocation);
+                    TextView tvDepartureTime = scheduleCard.findViewById(R.id.tvDepartureTime);
+                    TextView tvSeatNumbers = scheduleCard.findViewById(R.id.tvSeatNumbers);
+                    TextView tvBoardingPoint = scheduleCard.findViewById(R.id.tvBoardingPoint);
+                    TextView tvStatus = scheduleCard.findViewById(R.id.tvStatus);
+                    android.widget.Button btnViewDetails = scheduleCard.findViewById(R.id.btnViewDetails);
+                    
+                    // Get schedule data from cursor
+                    String fromLocation = null;
+                    String toLocation = null;
+                    String departureTime = null;
+                    String arrivalTime = null;
+                    String scheduleDate = null;
+                    int routeNumber = 0;
+                    long scheduleId = -1;
+                    double price = 0;
+                    String busType = null;
+                    int availableSeats = 0;
+                    
+                    try {
+                        int fromIndex = cursor.getColumnIndex("from_location");
+                        if (fromIndex >= 0) fromLocation = cursor.getString(fromIndex);
+                        
+                        int toIndex = cursor.getColumnIndex("to_location");
+                        if (toIndex >= 0) toLocation = cursor.getString(toIndex);
+                        
+                        int depTimeIndex = cursor.getColumnIndex("departure_time");
+                        if (depTimeIndex >= 0) departureTime = cursor.getString(depTimeIndex);
+                        
+                        int arrTimeIndex = cursor.getColumnIndex("arrival_time");
+                        if (arrTimeIndex >= 0) arrivalTime = cursor.getString(arrTimeIndex);
+                        
+                        int dateIndex = cursor.getColumnIndex("date");
+                        if (dateIndex >= 0) scheduleDate = cursor.getString(dateIndex);
+                        
+                        int routeNumberIndex = cursor.getColumnIndex("route_number");
+                        if (routeNumberIndex >= 0) routeNumber = cursor.getInt(routeNumberIndex);
+                        
+                        int scheduleIdIndex = cursor.getColumnIndex("schedule_id");
+                        if (scheduleIdIndex >= 0) scheduleId = cursor.getLong(scheduleIdIndex);
+                        
+                        int priceIndex = cursor.getColumnIndex("price");
+                        if (priceIndex >= 0) price = cursor.getDouble(priceIndex);
+                        
+                        int busTypeIndex = cursor.getColumnIndex("bus_type");
+                        if (busTypeIndex >= 0) busType = cursor.getString(busTypeIndex);
+                        
+                        int availableSeatsIndex = cursor.getColumnIndex("available_seats");
+                        if (availableSeatsIndex >= 0) availableSeats = cursor.getInt(availableSeatsIndex);
+                    } catch (Exception e) {
+                        android.util.Log.e("UpcomingJourneyActivity", "Error getting cursor data: " + e.getMessage(), e);
+                    }
+                    
+                    if (scheduleId == -1) {
+                        android.util.Log.w("UpcomingJourneyActivity", "Skipping schedule with invalid schedule ID");
+                        continue;
+                    }
+                    
+                    // Set terminal name (route number)
+                    if (tvTerminalName != null) {
+                        if (routeNumber > 0) {
+                            tvTerminalName.setText("Tuyến số " + routeNumber);
+                        } else {
+                            tvTerminalName.setText("Bến xe " + terminalCounter);
+                        }
+                    }
+                    
+                    // Set route locations
+                    if (tvFromLocation != null) {
+                        tvFromLocation.setText(fromLocation != null ? fromLocation : "");
+                    }
+                    if (tvToLocation != null) {
+                        tvToLocation.setText(toLocation != null ? toLocation : "");
+                    }
+                    
+                    // Format departure time and date
+                    if (tvDepartureTime != null) {
+                        try {
+                            String timeStr = departureTime != null ? DateTimeHelper.formatTime(departureTime) : "Chưa có";
+                            String dayStr = scheduleDate != null ? DateTimeHelper.getDayOfWeek(scheduleDate) : "";
+                            String dateStr = scheduleDate != null ? DateTimeHelper.formatDate(scheduleDate) : "Chưa có";
+                            tvDepartureTime.setText(timeStr + ", " + dayStr + "\n" + dateStr);
+                        } catch (Exception e) {
+                            android.util.Log.e("UpcomingJourneyActivity", "Error formatting time/date: " + e.getMessage());
+                            tvDepartureTime.setText("Chưa có");
+                        }
+                    }
+                    
+                    // Hide seat numbers and boarding point for schedules (not bookings)
+                    if (tvSeatNumbers != null) {
+                        tvSeatNumbers.setVisibility(View.GONE);
+                    }
+                    if (tvBoardingPoint != null) {
+                        tvBoardingPoint.setVisibility(View.GONE);
+                    }
+                    
+                    // Set status view - always "Sắp khởi hành" for upcoming schedules
+                    if (tvStatus != null) {
+                        tvStatus.setText("Sắp khởi hành");
+                        tvStatus.setBackgroundResource(R.drawable.bg_status_upcoming);
+                    }
+                    
+                    // Update button text
+                    if (btnViewDetails != null) {
+                        btnViewDetails.setText("Đặt vé");
+                    }
+                    
+                    // Set click listener to open ChooseSeatActivity for booking
+                    final long finalScheduleId = scheduleId;
+                    final String finalFromLocation = fromLocation;
+                    final String finalToLocation = toLocation;
+                    final int finalRouteNumber = routeNumber;
+                    final double finalPrice = price;
+                    final String finalDepartureTime = departureTime;
+                    final String finalArrivalTime = arrivalTime;
+                    final String finalBusType = busType;
+                    final String finalScheduleDate = scheduleDate;
+                    final int finalAvailableSeats = availableSeats;
+                    
+                    scheduleCard.setOnClickListener(v -> {
+                        try {
+                            android.content.Intent intent = new android.content.Intent(UpcomingJourneyActivity.this, ChooseSeatActivity.class);
+                            intent.putExtra("from_location", finalFromLocation);
+                            intent.putExtra("to_location", finalToLocation);
+                            intent.putExtra("schedule_id", finalScheduleId);
+                            intent.putExtra("route_number", finalRouteNumber);
+                            intent.putExtra("price", finalPrice);
+                            intent.putExtra("departure_time", finalDepartureTime);
+                            intent.putExtra("arrival_time", finalArrivalTime);
+                            intent.putExtra("bus_type", finalBusType);
+                            intent.putExtra("schedule_date", finalScheduleDate);
+                            intent.putExtra("available_seats", finalAvailableSeats);
+                            startActivity(intent);
+                        } catch (Exception e) {
+                            android.util.Log.e("UpcomingJourneyActivity", "Error opening ChooseSeatActivity: " + e.getMessage(), e);
+                            android.widget.Toast.makeText(UpcomingJourneyActivity.this, "Không thể mở trang đặt vé", android.widget.Toast.LENGTH_SHORT).show();
+                        }
+                    });
+                    
+                    if (btnViewDetails != null) {
+                        btnViewDetails.setOnClickListener(v -> {
+                            try {
+                                android.content.Intent intent = new android.content.Intent(UpcomingJourneyActivity.this, ChooseSeatActivity.class);
+                                intent.putExtra("from_location", finalFromLocation);
+                                intent.putExtra("to_location", finalToLocation);
+                                intent.putExtra("schedule_id", finalScheduleId);
+                                intent.putExtra("route_number", finalRouteNumber);
+                                intent.putExtra("price", finalPrice);
+                                intent.putExtra("departure_time", finalDepartureTime);
+                                intent.putExtra("arrival_time", finalArrivalTime);
+                                intent.putExtra("bus_type", finalBusType);
+                                intent.putExtra("schedule_date", finalScheduleDate);
+                                intent.putExtra("available_seats", finalAvailableSeats);
+                                startActivity(intent);
+                            } catch (Exception e) {
+                                android.util.Log.e("UpcomingJourneyActivity", "Error opening ChooseSeatActivity: " + e.getMessage(), e);
+                                android.widget.Toast.makeText(UpcomingJourneyActivity.this, "Không thể mở trang đặt vé", android.widget.Toast.LENGTH_SHORT).show();
+                            }
+                        });
+                    }
+                    
+                    bookingsContainer.addView(scheduleCard);
+                    hasVisibleItems = true;
+                    terminalCounter++;
+                } catch (Exception e) {
+                    android.util.Log.e("UpcomingJourneyActivity", "Error processing schedule card: " + e.getMessage(), e);
+                }
+            } while (cursor.moveToNext());
+            
+            // Show message if no items
+            if (!hasVisibleItems) {
+                showEmptyMessage(bookingsContainer, "Không có chuyến xe sắp tới. Vui lòng thử lại sau!");
+            }
+        } catch (Exception e) {
+            android.util.Log.e("UpcomingJourneyActivity", "Error loading schedules: " + e.getMessage(), e);
+            showEmptyMessage(bookingsContainer, "Lỗi khi tải dữ liệu");
+        } finally {
+            if (cursor != null && !cursor.isClosed()) {
+                try {
+                    cursor.close();
+                } catch (Exception e) {
+                    android.util.Log.e("UpcomingJourneyActivity", "Error closing cursor: " + e.getMessage(), e);
+                }
             }
         }
     }

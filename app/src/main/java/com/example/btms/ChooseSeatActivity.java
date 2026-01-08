@@ -85,13 +85,30 @@ public class ChooseSeatActivity extends AppCompatActivity {
         
         android.util.Log.d("ChooseSeatActivity", "Received from Intent: ID=" + scheduleId + ", Seats: " + availableSeats + ", Date: " + scheduleDate);
         
-        // Refresh availableSeats from database to ensure sync
         if (scheduleId != -1) {
-            int latestAvailable = dbHelper.getScheduleAvailableSeats(scheduleId);
-            android.util.Log.d("ChooseSeatActivity", "Latest available from DB: " + latestAvailable);
-            if (latestAvailable > 0) {
-                availableSeats = latestAvailable;
-            }
+            final int initialAvailableSeats = availableSeats;
+            
+            new Thread(() -> {
+                try {
+                    int latestAvailable = dbHelper.getScheduleAvailableSeats(scheduleId);
+                    android.util.Log.d("ChooseSeatActivity", "Latest available from DB: " + latestAvailable);
+                    
+                    if (latestAvailable > 0 && latestAvailable != initialAvailableSeats) {
+                        runOnUiThread(() -> {
+                            if (!isFinishing() && !isDestroyed()) {
+                                availableSeats = latestAvailable;
+                                android.util.Log.d("ChooseSeatActivity", "Updated available seats to: " + availableSeats);
+                                TextView tvSeatsLeft = findViewById(R.id.tvSeatsLeft);
+                                if (tvSeatsLeft != null && availableSeats > 0) {
+                                    tvSeatsLeft.setText(availableSeats + " Seats left");
+                                }
+                            }
+                        });
+                    }
+                } catch (Exception e) {
+                    android.util.Log.e("ChooseSeatActivity", "Error getting available seats: " + e.getMessage(), e);
+                }
+            }).start();
         }
         
         // Update route display
@@ -242,9 +259,6 @@ public class ChooseSeatActivity extends AppCompatActivity {
     
     @Override
     protected void onDestroy() {
-        if (dbHelper != null) {
-            dbHelper.close();
-        }
         super.onDestroy();
     }
 

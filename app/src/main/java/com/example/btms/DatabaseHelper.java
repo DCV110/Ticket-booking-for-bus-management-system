@@ -12,7 +12,7 @@ import java.util.List;
 public class DatabaseHelper extends SQLiteOpenHelper {
 
     private static final String DATABASE_NAME = "btms.db";
-    private static final int DATABASE_VERSION = 11; // Added wallet tables
+    private static final int DATABASE_VERSION = 12; // Added notifications table
 
     // Table: users
     private static final String TABLE_USERS = "users";
@@ -94,11 +94,30 @@ public class DatabaseHelper extends SQLiteOpenHelper {
     private static final String COL_TRANSACTION_DESCRIPTION = "description";
     private static final String COL_TRANSACTION_DATE = "transaction_date";
 
+    // Table: notifications
+    private static final String TABLE_NOTIFICATIONS = "notifications";
+    private static final String COL_NOTIFICATION_ID = "id";
+    private static final String COL_NOTIFICATION_USER_EMAIL = "user_email";
+    private static final String COL_NOTIFICATION_TITLE = "title";
+    private static final String COL_NOTIFICATION_MESSAGE = "message";
+    private static final String COL_NOTIFICATION_TYPE = "type"; // booking, reminder, promotion, system
+    private static final String COL_NOTIFICATION_IS_READ = "is_read";
+    private static final String COL_NOTIFICATION_CREATED_AT = "created_at";
+    private static final String COL_NOTIFICATION_BOOKING_ID = "booking_id"; // Optional: link to booking
+
     public DatabaseHelper(Context context) {
         super(context, DATABASE_NAME, null, DATABASE_VERSION);
-        
-        // Note: Database will be recreated automatically by SQLiteOpenHelper
-        // if DATABASE_VERSION is incremented. No need to manually delete.
+    }
+    
+    @Override
+    public void onConfigure(SQLiteDatabase db) {
+        super.onConfigure(db);
+        try {
+            db.execSQL("PRAGMA journal_mode=WAL;");
+            android.util.Log.d("DatabaseHelper", "WAL mode enabled for better concurrency");
+        } catch (Exception e) {
+            android.util.Log.e("DatabaseHelper", "Error enabling WAL mode: " + e.getMessage(), e);
+        }
     }
 
     @Override
@@ -202,6 +221,19 @@ public class DatabaseHelper extends SQLiteOpenHelper {
                 + COL_TRANSACTION_DATE + " TEXT DEFAULT CURRENT_TIMESTAMP"
                 + ")";
         db.execSQL(createWalletTransactionsTable);
+
+        // Create notifications table
+        String createNotificationsTable = "CREATE TABLE " + TABLE_NOTIFICATIONS + "("
+                + COL_NOTIFICATION_ID + " INTEGER PRIMARY KEY AUTOINCREMENT,"
+                + COL_NOTIFICATION_USER_EMAIL + " TEXT NOT NULL,"
+                + COL_NOTIFICATION_TITLE + " TEXT NOT NULL,"
+                + COL_NOTIFICATION_MESSAGE + " TEXT NOT NULL,"
+                + COL_NOTIFICATION_TYPE + " TEXT DEFAULT 'system',"
+                + COL_NOTIFICATION_IS_READ + " INTEGER DEFAULT 0,"
+                + COL_NOTIFICATION_CREATED_AT + " TEXT DEFAULT CURRENT_TIMESTAMP,"
+                + COL_NOTIFICATION_BOOKING_ID + " INTEGER"
+                + ")";
+        db.execSQL(createNotificationsTable);
 
         // Insert initial data
         insertInitialData(db);
@@ -425,6 +457,26 @@ public class DatabaseHelper extends SQLiteOpenHelper {
                 android.util.Log.e("DatabaseHelper", "Error creating wallet tables: " + e.getMessage());
             }
         }
+        
+        if (oldVersion < 12) {
+            // Create notifications table
+            android.util.Log.d("DatabaseHelper", "Upgrading to version 12: Creating notifications table");
+            try {
+                String createNotificationsTable = "CREATE TABLE IF NOT EXISTS " + TABLE_NOTIFICATIONS + "("
+                        + COL_NOTIFICATION_ID + " INTEGER PRIMARY KEY AUTOINCREMENT,"
+                        + COL_NOTIFICATION_USER_EMAIL + " TEXT NOT NULL,"
+                        + COL_NOTIFICATION_TITLE + " TEXT NOT NULL,"
+                        + COL_NOTIFICATION_MESSAGE + " TEXT NOT NULL,"
+                        + COL_NOTIFICATION_TYPE + " TEXT DEFAULT 'system',"
+                        + COL_NOTIFICATION_IS_READ + " INTEGER DEFAULT 0,"
+                        + COL_NOTIFICATION_CREATED_AT + " TEXT DEFAULT CURRENT_TIMESTAMP,"
+                        + COL_NOTIFICATION_BOOKING_ID + " INTEGER"
+                        + ")";
+                db.execSQL(createNotificationsTable);
+            } catch (Exception e) {
+                android.util.Log.e("DatabaseHelper", "Error creating notifications table: " + e.getMessage());
+            }
+        }
     }
 
     private void insertInitialData(SQLiteDatabase db) {
@@ -463,35 +515,138 @@ public class DatabaseHelper extends SQLiteOpenHelper {
         
         // Note: Sample schedules will be created on-demand when user searches for trips
         // This avoids blocking database creation and potential crashes
+        // Schedules are also auto-created in getSuggestedJourneys() if none exist
+    }
+    
+    // Initialize sample data after database is created (call this from app startup)
+    public void initializeSampleData() {
+        SQLiteDatabase db = null;
+        Cursor routeCheck = null;
+        try {
+            android.util.Log.d("DatabaseHelper", "Initializing sample data...");
+            
+            // Ensure we have routes
+            db = this.getReadableDatabase();
+            if (db == null || !db.isOpen()) {
+                android.util.Log.e("DatabaseHelper", "Cannot get readable database in initializeSampleData");
+                return;
+            }
+            
+            routeCheck = db.query(TABLE_BUS_ROUTES, new String[]{COL_ROUTE_ID}, null, null, null, null, null, "1");
+            boolean hasRoutes = routeCheck != null && routeCheck.moveToFirst();
+            if (routeCheck != null) {
+                routeCheck.close();
+                routeCheck = null;
+            }
+            
+            // Don't close db here - we'll use it or let insertSampleSchedulesForDate manage its own connections
+            
+            if (!hasRoutes) {
+                android.util.Log.w("DatabaseHelper", "No routes found, creating sample routes...");
+                // Close read database before opening write database
+                if (db != null && db.isOpen()) {
+                    // Don't close - let SQLiteOpenHelper manage it
+                }
+                SQLiteDatabase writeDb = this.getWritableDatabase();
+                if (writeDb != null && writeDb.isOpen()) {
+                    insertSampleRoutes(writeDb);
+                    // Don't close writeDb - let SQLiteOpenHelper manage it
+                }
+            }
+            
+            // Create sample schedules for next 7 days
+            java.text.SimpleDateFormat sdf = new java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault());
+            java.util.Calendar cal = java.util.Calendar.getInstance();
+            
+            // Create schedules for today and next 7 days
+            for (int i = 0; i < 7; i++) {
+                cal.setTime(new java.util.Date());
+                cal.add(java.util.Calendar.DAY_OF_MONTH, i);
+                String date = sdf.format(cal.getTime());
+                try {
+                    insertSampleSchedulesForDate(date);
+                } catch (Exception e) {
+                    android.util.Log.e("DatabaseHelper", "Error creating schedules for date " + date + ": " + e.getMessage(), e);
+                    // Continue with next date
+                }
+            }
+            
+            android.util.Log.d("DatabaseHelper", "Sample data initialization complete");
+        } catch (Exception e) {
+            android.util.Log.e("DatabaseHelper", "Error initializing sample data: " + e.getMessage(), e);
+        } finally {
+            // Clean up cursors
+            if (routeCheck != null && !routeCheck.isClosed()) {
+                try {
+                    routeCheck.close();
+                } catch (Exception e) {
+                    android.util.Log.e("DatabaseHelper", "Error closing routeCheck cursor: " + e.getMessage(), e);
+                }
+            }
+            // Don't close db here - let SQLiteOpenHelper manage database connections
+            // Closing it manually can cause connection pool issues
+        }
     }
     
     // Call this method to ensure sample schedules exist
     public void ensureSampleSchedules() {
-        SQLiteDatabase db = this.getReadableDatabase();
-        Cursor cursor = db.query(TABLE_BUS_SCHEDULES, new String[]{COL_SCHEDULE_ID}, null, null, null, null, null, "1");
-        boolean hasSchedules = cursor.moveToFirst();
-        cursor.close();
-        db.close();
-        
-        if (!hasSchedules) {
-            insertSampleSchedules();
+        SQLiteDatabase db = null;
+        Cursor cursor = null;
+        try {
+            db = this.getReadableDatabase();
+            if (db == null) {
+                return;
+            }
+            cursor = db.query(TABLE_BUS_SCHEDULES, new String[]{COL_SCHEDULE_ID}, null, null, null, null, null, "1");
+            boolean hasSchedules = cursor != null && cursor.moveToFirst();
+            
+            if (!hasSchedules) {
+                insertSampleSchedules();
+            }
+        } catch (Exception e) {
+            android.util.Log.e("DatabaseHelper", "Error in ensureSampleSchedules: " + e.getMessage(), e);
+        } finally {
+            if (cursor != null && !cursor.isClosed()) {
+                try {
+                    cursor.close();
+                } catch (Exception e) {
+                    android.util.Log.e("DatabaseHelper", "Error closing cursor: " + e.getMessage(), e);
+                }
+            }
+            // Don't close db here - let SQLiteOpenHelper manage connection pool
         }
     }
     
     // Ensure sample schedules exist for a specific date
     public void ensureSampleSchedulesForDate(String date) {
-        SQLiteDatabase db = this.getReadableDatabase();
-        Cursor cursor = db.query(TABLE_BUS_SCHEDULES, 
-                new String[]{COL_SCHEDULE_ID}, 
-                COL_SCHEDULE_DATE + " = ?", 
-                new String[]{date}, 
-                null, null, null, "1");
-        boolean hasSchedulesForDate = cursor.moveToFirst();
-        cursor.close();
-        db.close();
-        
-        if (!hasSchedulesForDate) {
-            insertSampleSchedulesForDate(date);
+        SQLiteDatabase db = null;
+        Cursor cursor = null;
+        try {
+            db = this.getReadableDatabase();
+            if (db == null) {
+                return;
+            }
+            cursor = db.query(TABLE_BUS_SCHEDULES, 
+                    new String[]{COL_SCHEDULE_ID}, 
+                    COL_SCHEDULE_DATE + " = ?", 
+                    new String[]{date}, 
+                    null, null, null, "1");
+            boolean hasSchedulesForDate = cursor != null && cursor.moveToFirst();
+            
+            if (!hasSchedulesForDate) {
+                insertSampleSchedulesForDate(date);
+            }
+        } catch (Exception e) {
+            android.util.Log.e("DatabaseHelper", "Error in ensureSampleSchedulesForDate: " + e.getMessage(), e);
+        } finally {
+            if (cursor != null && !cursor.isClosed()) {
+                try {
+                    cursor.close();
+                } catch (Exception e) {
+                    android.util.Log.e("DatabaseHelper", "Error closing cursor: " + e.getMessage(), e);
+                }
+            }
+            // Don't close db here - let SQLiteOpenHelper manage connection pool
         }
     }
 
@@ -571,13 +726,15 @@ public class DatabaseHelper extends SQLiteOpenHelper {
     // Get all locations (only district names, without state for cleaner UI)
     public List<String> getAllLocations() {
         List<String> locations = new ArrayList<>();
+        SQLiteDatabase db = null;
+        Cursor cursor = null;
         try {
-            SQLiteDatabase db = this.getReadableDatabase();
+            db = this.getReadableDatabase();
             if (db == null) {
                 return locations;
             }
             
-            Cursor cursor = db.query(TABLE_LOCATIONS,
+            cursor = db.query(TABLE_LOCATIONS,
                     new String[]{COL_LOCATION_NAME},
                     null, null, null, null,
                     COL_LOCATION_NAME + " ASC");
@@ -591,11 +748,19 @@ public class DatabaseHelper extends SQLiteOpenHelper {
                         }
                     } while (cursor.moveToNext());
                 }
-                cursor.close();
             }
-            db.close();
         } catch (Exception e) {
             android.util.Log.e("DatabaseHelper", "Error getting locations: " + e.getMessage(), e);
+        } finally {
+            if (cursor != null && !cursor.isClosed()) {
+                try {
+                    cursor.close();
+                } catch (Exception e) {
+                    android.util.Log.e("DatabaseHelper", "Error closing cursor: " + e.getMessage(), e);
+                }
+            }
+            // Don't close db here - let SQLiteOpenHelper manage connection pool
+            // Closing it manually can cause connection pool issues when other threads need database
         }
         return locations;
     }
@@ -603,17 +768,19 @@ public class DatabaseHelper extends SQLiteOpenHelper {
     // Get locations by name (for search) - only district names
     public List<String> searchLocations(String query) {
         List<String> locations = new ArrayList<>();
+        SQLiteDatabase db = null;
+        Cursor cursor = null;
         try {
             if (query == null || query.isEmpty()) {
                 return getAllLocations();
             }
             
-            SQLiteDatabase db = this.getReadableDatabase();
+            db = this.getReadableDatabase();
             if (db == null) {
                 return locations;
             }
             
-            Cursor cursor = db.query(TABLE_LOCATIONS,
+            cursor = db.query(TABLE_LOCATIONS,
                     new String[]{COL_LOCATION_NAME},
                     COL_LOCATION_NAME + " LIKE ?",
                     new String[]{"%" + query + "%"},
@@ -629,11 +796,18 @@ public class DatabaseHelper extends SQLiteOpenHelper {
                         }
                     } while (cursor.moveToNext());
                 }
-                cursor.close();
             }
-            db.close();
         } catch (Exception e) {
             android.util.Log.e("DatabaseHelper", "Error searching locations: " + e.getMessage(), e);
+        } finally {
+            if (cursor != null && !cursor.isClosed()) {
+                try {
+                    cursor.close();
+                } catch (Exception e) {
+                    android.util.Log.e("DatabaseHelper", "Error closing cursor: " + e.getMessage(), e);
+                }
+            }
+            // Don't close db here - let SQLiteOpenHelper manage connection pool
         }
         return locations;
     }
@@ -655,138 +829,33 @@ public class DatabaseHelper extends SQLiteOpenHelper {
     
     // Public method to get location ID
     public long getLocationIdByName(String cityName) {
-        SQLiteDatabase db = this.getReadableDatabase();
-        long id = getLocationId(db, cityName);
-        db.close();
-        return id;
+        SQLiteDatabase db = null;
+        Cursor cursor = null;
+        try {
+            db = this.getReadableDatabase();
+            if (db == null) {
+                return -1;
+            }
+            return getLocationId(db, cityName);
+        } catch (Exception e) {
+            android.util.Log.e("DatabaseHelper", "Error in getLocationIdByName: " + e.getMessage(), e);
+            return -1;
+        } finally {
+            // Don't close db here - let SQLiteOpenHelper manage connection pool
+        }
     }
 
     // Get route ID by from and to locations
     public long getRouteId(String fromLocation, String toLocation) {
-        SQLiteDatabase db = this.getReadableDatabase();
-        
-        // Get location IDs
-        String fromCity = fromLocation.split(",")[0].trim();
-        String toCity = toLocation.split(",")[0].trim();
-        
-        long fromId = getLocationId(db, fromCity);
-        long toId = getLocationId(db, toCity);
-        
-        if (fromId == -1 || toId == -1) {
-            db.close();
-            return -1;
-        }
-
-        Cursor cursor = db.query(TABLE_BUS_ROUTES,
-                new String[]{COL_ROUTE_ID},
-                COL_ROUTE_FROM + " = ? AND " + COL_ROUTE_TO + " = ?",
-                new String[]{String.valueOf(fromId), String.valueOf(toId)},
-                null, null, null);
-
-        long routeId = -1;
-        if (cursor.moveToFirst()) {
-            routeId = cursor.getLong(0);
-        }
-        cursor.close();
-        db.close();
-        return routeId;
-    }
-    
-    // Create route if it doesn't exist
-    public long createRouteIfNotExists(String fromLocation, String toLocation) {
-        SQLiteDatabase db = this.getWritableDatabase();
-        
-        // Get location IDs
-        String fromCity = fromLocation.split(",")[0].trim();
-        String toCity = toLocation.split(",")[0].trim();
-        
-        long fromId = getLocationId(db, fromCity);
-        long toId = getLocationId(db, toCity);
-        
-        if (fromId == -1 || toId == -1) {
-            db.close();
-            return -1;
-        }
-        
-        // Check if routes already exist for this pair
-        Cursor cursor = db.query(TABLE_BUS_ROUTES,
-                new String[]{COL_ROUTE_ID},
-                COL_ROUTE_FROM + " = ? AND " + COL_ROUTE_TO + " = ?",
-                new String[]{String.valueOf(fromId), String.valueOf(toId)},
-                null, null, null);
-        
-        if (cursor.getCount() > 0) {
-            // Routes already exist, return the first one
-            cursor.moveToFirst();
-            long routeId = cursor.getLong(0);
-            cursor.close();
-            db.close();
-            return routeId;
-        }
-        cursor.close();
-        
-        // Estimate distance and duration (simple calculation for HCMC districts)
-        double estimatedDistance = 5.0; // Default 5km for HCMC districts
-        int estimatedDuration = 20; // Default 20 minutes
-        
-        // Get next route number (max route number + 1)
-        Cursor maxRouteCursor = db.rawQuery("SELECT MAX(" + COL_ROUTE_NUMBER + ") FROM " + TABLE_BUS_ROUTES, null);
-        int nextRouteNumber = 1;
-        if (maxRouteCursor.moveToFirst() && !maxRouteCursor.isNull(0)) {
-            nextRouteNumber = maxRouteCursor.getInt(0) + 1;
-        }
-        maxRouteCursor.close();
-        
-        // Get all existing route numbers to avoid duplicates
-        java.util.Set<Integer> existingRouteNumbers = new java.util.HashSet<>();
-        Cursor existingRoutesCursor = db.query(TABLE_BUS_ROUTES, 
-                new String[]{COL_ROUTE_NUMBER}, 
-                null, null, null, null, null);
-        while (existingRoutesCursor.moveToNext()) {
-            int routeNum = existingRoutesCursor.getInt(0);
-            existingRouteNumbers.add(routeNum);
-        }
-        existingRoutesCursor.close();
-        
-        // Create 3-5 random routes for the same A-B pair with different route numbers
-        // This simulates having multiple bus lines (tuyến) for the same route
-        int numRoutes = 3 + (int)(Math.random() * 3); // 3 to 5 routes
-        long firstRouteId = -1;
-        int currentRouteNumber = nextRouteNumber;
-        
-        for (int i = 0; i < numRoutes; i++) {
-            // Find next available route number (skip if already exists)
-            while (existingRouteNumbers.contains(currentRouteNumber)) {
-                currentRouteNumber++;
-            }
-            
-            ContentValues values = new ContentValues();
-            values.put(COL_ROUTE_FROM, fromId);
-            values.put(COL_ROUTE_TO, toId);
-            values.put(COL_ROUTE_DISTANCE, estimatedDistance + (Math.random() * 2)); // Slight variation
-            values.put(COL_ROUTE_DURATION, estimatedDuration + (int)(Math.random() * 10)); // Slight variation
-            values.put(COL_ROUTE_NUMBER, currentRouteNumber);
-            
-            long routeId = db.insert(TABLE_BUS_ROUTES, null, values);
-            existingRouteNumbers.add(currentRouteNumber); // Add to set to avoid duplicates in same batch
-            currentRouteNumber++; // Move to next number
-            
-            if (i == 0) {
-                firstRouteId = routeId;
-            }
-            android.util.Log.d("DatabaseHelper", "Created route " + (i + 1) + "/" + numRoutes + " from " + fromCity + " to " + toCity + " with ID: " + routeId + ", Route Number: " + (currentRouteNumber - 1));
-        }
-        
-        db.close();
-        return firstRouteId;
-    }
-    
-    // Get all route IDs for a from-to pair
-    public java.util.List<Long> getAllRouteIdsForPair(String fromLocation, String toLocation) {
-        java.util.List<Long> routeIds = new java.util.ArrayList<>();
-        SQLiteDatabase db = this.getReadableDatabase();
-        
+        SQLiteDatabase db = null;
+        Cursor cursor = null;
         try {
+            db = this.getReadableDatabase();
+            if (db == null) {
+                return -1;
+            }
+            
+            // Get location IDs
             String fromCity = fromLocation.split(",")[0].trim();
             String toCity = toLocation.split(",")[0].trim();
             
@@ -794,24 +863,198 @@ public class DatabaseHelper extends SQLiteOpenHelper {
             long toId = getLocationId(db, toCity);
             
             if (fromId == -1 || toId == -1) {
-                db.close();
+                return -1;
+            }
+
+            cursor = db.query(TABLE_BUS_ROUTES,
+                    new String[]{COL_ROUTE_ID},
+                    COL_ROUTE_FROM + " = ? AND " + COL_ROUTE_TO + " = ?",
+                    new String[]{String.valueOf(fromId), String.valueOf(toId)},
+                    null, null, null);
+
+            long routeId = -1;
+            if (cursor != null && cursor.moveToFirst()) {
+                routeId = cursor.getLong(0);
+            }
+            return routeId;
+        } catch (Exception e) {
+            android.util.Log.e("DatabaseHelper", "Error in getRouteId: " + e.getMessage(), e);
+            return -1;
+        } finally {
+            if (cursor != null && !cursor.isClosed()) {
+                try {
+                    cursor.close();
+                } catch (Exception e) {
+                    android.util.Log.e("DatabaseHelper", "Error closing cursor: " + e.getMessage(), e);
+                }
+            }
+            // Don't close db here - let SQLiteOpenHelper manage connection pool
+        }
+    }
+    
+    // Create route if it doesn't exist
+    public long createRouteIfNotExists(String fromLocation, String toLocation) {
+        SQLiteDatabase db = null;
+        Cursor cursor = null;
+        Cursor maxRouteCursor = null;
+        Cursor existingRoutesCursor = null;
+        try {
+            db = this.getWritableDatabase();
+            if (db == null) {
+                return -1;
+            }
+            
+            // Get location IDs
+            String fromCity = fromLocation.split(",")[0].trim();
+            String toCity = toLocation.split(",")[0].trim();
+            
+            long fromId = getLocationId(db, fromCity);
+            long toId = getLocationId(db, toCity);
+            
+            if (fromId == -1 || toId == -1) {
+                return -1;
+            }
+            
+            // Check if routes already exist for this pair
+            cursor = db.query(TABLE_BUS_ROUTES,
+                    new String[]{COL_ROUTE_ID},
+                    COL_ROUTE_FROM + " = ? AND " + COL_ROUTE_TO + " = ?",
+                    new String[]{String.valueOf(fromId), String.valueOf(toId)},
+                    null, null, null);
+            
+            if (cursor != null && cursor.getCount() > 0) {
+                // Routes already exist, return the first one
+                cursor.moveToFirst();
+                long routeId = cursor.getLong(0);
+                return routeId;
+            }
+        
+            
+            // Estimate distance and duration (simple calculation for HCMC districts)
+            double estimatedDistance = 5.0; // Default 5km for HCMC districts
+            int estimatedDuration = 20; // Default 20 minutes
+            
+            // Get next route number (max route number + 1)
+            maxRouteCursor = db.rawQuery("SELECT MAX(" + COL_ROUTE_NUMBER + ") FROM " + TABLE_BUS_ROUTES, null);
+            int nextRouteNumber = 1;
+            if (maxRouteCursor != null && maxRouteCursor.moveToFirst() && !maxRouteCursor.isNull(0)) {
+                nextRouteNumber = maxRouteCursor.getInt(0) + 1;
+            }
+            
+            // Get all existing route numbers to avoid duplicates
+            java.util.Set<Integer> existingRouteNumbers = new java.util.HashSet<>();
+            existingRoutesCursor = db.query(TABLE_BUS_ROUTES, 
+                    new String[]{COL_ROUTE_NUMBER}, 
+                    null, null, null, null, null);
+            if (existingRoutesCursor != null) {
+                while (existingRoutesCursor.moveToNext()) {
+                    int routeNum = existingRoutesCursor.getInt(0);
+                    existingRouteNumbers.add(routeNum);
+                }
+            }
+            
+            // Create 3-5 random routes for the same A-B pair with different route numbers
+            // This simulates having multiple bus lines (tuyến) for the same route
+            int numRoutes = 3 + (int)(Math.random() * 3); // 3 to 5 routes
+            long firstRouteId = -1;
+            int currentRouteNumber = nextRouteNumber;
+            
+            for (int i = 0; i < numRoutes; i++) {
+                // Find next available route number (skip if already exists)
+                while (existingRouteNumbers.contains(currentRouteNumber)) {
+                    currentRouteNumber++;
+                }
+                
+                ContentValues values = new ContentValues();
+                values.put(COL_ROUTE_FROM, fromId);
+                values.put(COL_ROUTE_TO, toId);
+                values.put(COL_ROUTE_DISTANCE, estimatedDistance + (Math.random() * 2)); // Slight variation
+                values.put(COL_ROUTE_DURATION, estimatedDuration + (int)(Math.random() * 10)); // Slight variation
+                values.put(COL_ROUTE_NUMBER, currentRouteNumber);
+                
+                long routeId = db.insert(TABLE_BUS_ROUTES, null, values);
+                existingRouteNumbers.add(currentRouteNumber); // Add to set to avoid duplicates in same batch
+                currentRouteNumber++; // Move to next number
+                
+                if (i == 0) {
+                    firstRouteId = routeId;
+                }
+                android.util.Log.d("DatabaseHelper", "Created route " + (i + 1) + "/" + numRoutes + " from " + fromCity + " to " + toCity + " with ID: " + routeId + ", Route Number: " + (currentRouteNumber - 1));
+            }
+            
+            return firstRouteId;
+        } catch (Exception e) {
+            android.util.Log.e("DatabaseHelper", "Error in createRouteIfNotExists: " + e.getMessage(), e);
+            return -1;
+        } finally {
+            if (cursor != null && !cursor.isClosed()) {
+                try {
+                    cursor.close();
+                } catch (Exception e) {
+                    android.util.Log.e("DatabaseHelper", "Error closing cursor: " + e.getMessage(), e);
+                }
+            }
+            if (maxRouteCursor != null && !maxRouteCursor.isClosed()) {
+                try {
+                    maxRouteCursor.close();
+                } catch (Exception e) {
+                    android.util.Log.e("DatabaseHelper", "Error closing maxRouteCursor: " + e.getMessage(), e);
+                }
+            }
+            if (existingRoutesCursor != null && !existingRoutesCursor.isClosed()) {
+                try {
+                    existingRoutesCursor.close();
+                } catch (Exception e) {
+                    android.util.Log.e("DatabaseHelper", "Error closing existingRoutesCursor: " + e.getMessage(), e);
+                }
+            }
+            // Don't close db here - let SQLiteOpenHelper manage connection pool
+        }
+    }
+    
+    // Get all route IDs for a from-to pair
+    public java.util.List<Long> getAllRouteIdsForPair(String fromLocation, String toLocation) {
+        java.util.List<Long> routeIds = new java.util.ArrayList<>();
+        SQLiteDatabase db = null;
+        Cursor cursor = null;
+        try {
+            db = this.getReadableDatabase();
+            if (db == null) {
                 return routeIds;
             }
             
-            Cursor cursor = db.query(TABLE_BUS_ROUTES,
+            String fromCity = fromLocation.split(",")[0].trim();
+            String toCity = toLocation.split(",")[0].trim();
+            
+            long fromId = getLocationId(db, fromCity);
+            long toId = getLocationId(db, toCity);
+            
+            if (fromId == -1 || toId == -1) {
+                return routeIds;
+            }
+            
+            cursor = db.query(TABLE_BUS_ROUTES,
                     new String[]{COL_ROUTE_ID},
                     COL_ROUTE_FROM + " = ? AND " + COL_ROUTE_TO + " = ?",
                     new String[]{String.valueOf(fromId), String.valueOf(toId)},
                     null, null, COL_ROUTE_NUMBER + " ASC");
             
-            while (cursor.moveToNext()) {
-                routeIds.add(cursor.getLong(0));
+            if (cursor != null) {
+                while (cursor.moveToNext()) {
+                    routeIds.add(cursor.getLong(0));
+                }
             }
-            cursor.close();
         } catch (Exception e) {
             android.util.Log.e("DatabaseHelper", "Error getting route IDs: " + e.getMessage(), e);
         } finally {
-            db.close();
+            if (cursor != null && !cursor.isClosed()) {
+                try {
+                    cursor.close();
+                } catch (Exception e) {
+                    android.util.Log.e("DatabaseHelper", "Error closing cursor: " + e.getMessage(), e);
+                }
+            }
+            // Don't close db here - let SQLiteOpenHelper manage connection pool
         }
         
         return routeIds;
@@ -894,8 +1137,20 @@ public class DatabaseHelper extends SQLiteOpenHelper {
         Cursor routeCursor = null;
         Cursor companyCursor = null;
         try {
-            db = this.getWritableDatabase();
-            if (db == null) {
+            // Try to get writable database, but check if it's still available
+            try {
+                db = this.getWritableDatabase();
+            } catch (Exception dbException) {
+                android.util.Log.e("DatabaseHelper", "Error getting writable database: " + dbException.getMessage(), dbException);
+                // If database helper was closed, try to create a new instance
+                if (dbException.getMessage() != null && dbException.getMessage().contains("closed")) {
+                    android.util.Log.w("DatabaseHelper", "Database helper was closed, skipping insertSampleSchedulesForDate");
+                    return;
+                }
+                throw dbException;
+            }
+            
+            if (db == null || !db.isOpen()) {
                 android.util.Log.e("DatabaseHelper", "Cannot get writable database in insertSampleSchedulesForDate");
                 return;
             }
@@ -1076,7 +1331,8 @@ public class DatabaseHelper extends SQLiteOpenHelper {
                     
                     // Insert sample bookings to match available seats
                     if (sId != -1 && bookedCount > 0) {
-                        insertSampleBookingsForSchedule(db, sId, bookedCount);
+                        double schedulePrice = Math.round(price); // Use the price we just calculated
+                        insertSampleBookingsForSchedule(db, sId, bookedCount, schedulePrice);
                     }
                 }
                 
@@ -1097,15 +1353,29 @@ public class DatabaseHelper extends SQLiteOpenHelper {
     }
 
     // Helper to insert sample bookings when generating schedules
-    private void insertSampleBookingsForSchedule(SQLiteDatabase db, long scheduleId, int count) {
+    private void insertSampleBookingsForSchedule(SQLiteDatabase db, long scheduleId, int count, double pricePerSeat) {
+        // Check if database is still open and valid
+        if (db == null || !db.isOpen()) {
+            android.util.Log.e("DatabaseHelper", "Database is null or closed in insertSampleBookingsForSchedule");
+            return;
+        }
+        
+        // Use the provided price per seat (no need to query database)
+        if (pricePerSeat <= 0) {
+            android.util.Log.w("DatabaseHelper", "Schedule price is 0 for scheduleId: " + scheduleId + ". Using default price 100000.");
+            pricePerSeat = 100000; // Default price if invalid
+        }
+        
         String[] seatPrefixes = {"A", "B", "C"};
-        java.util.List<String> seats = new java.util.ArrayList<>();
+        String[] passengerNames = {"Khách hàng mẫu", "Người dùng A", "Người dùng B"};
+        String[] genders = {"Male", "Female"};
+        java.util.Random random = new java.util.Random();
         
         // Generate random unique seat numbers
         java.util.Set<String> chosenSeats = new java.util.HashSet<>();
         while (chosenSeats.size() < count) {
-            String prefix = seatPrefixes[(int)(Math.random() * seatPrefixes.length)];
-            int num = 1 + (int)(Math.random() * 14);
+            String prefix = seatPrefixes[random.nextInt(seatPrefixes.length)];
+            int num = 1 + random.nextInt(14);
             chosenSeats.add(prefix + num);
         }
         
@@ -1113,7 +1383,13 @@ public class DatabaseHelper extends SQLiteOpenHelper {
         java.util.List<String> seatList = new java.util.ArrayList<>(chosenSeats);
         int index = 0;
         while (index < seatList.size()) {
-            int groupSize = 1 + (int)(Math.random() * 3); // 1-3 seats per booking
+            // Check database again before each insert
+            if (db == null || !db.isOpen()) {
+                android.util.Log.w("DatabaseHelper", "Database was closed during booking insertion, stopping at index: " + index);
+                return;
+            }
+            
+            int groupSize = 1 + random.nextInt(3); // 1-3 seats per booking
             if (index + groupSize > seatList.size()) groupSize = seatList.size() - index;
             
             StringBuilder sb = new StringBuilder();
@@ -1125,10 +1401,32 @@ public class DatabaseHelper extends SQLiteOpenHelper {
             ContentValues v = new ContentValues();
             v.put(COL_BOOKING_SCHEDULE_ID, scheduleId);
             v.put(COL_BOOKING_USER_EMAIL, "sample@example.com");
-            v.put(COL_BOOKING_PASSENGER_NAME, "Khách hàng mẫu");
+            v.put(COL_BOOKING_PASSENGER_NAME, passengerNames[random.nextInt(passengerNames.length)]);
+            v.put(COL_BOOKING_PASSENGER_AGE, 18 + random.nextInt(40)); // Age between 18 and 57
+            v.put(COL_BOOKING_PASSENGER_GENDER, genders[random.nextInt(genders.length)]);
             v.put(COL_BOOKING_SEAT_NUMBERS, sb.toString());
+            v.put(COL_BOOKING_BOARDING_POINT, "Điểm đón mẫu");
+            v.put(COL_BOOKING_DROP_POINT, "Điểm trả mẫu");
+            v.put(COL_BOOKING_TOTAL_FARE, pricePerSeat * groupSize); // Calculate total fare: price per seat * number of seats
             v.put(COL_BOOKING_STATUS, "confirmed");
-            db.insert(TABLE_BOOKINGS, null, v);
+            v.put(COL_BOOKING_BOOKING_DATE, new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault()).format(new java.util.Date()));
+            v.put(COL_BOOKING_CODE, "BOOK" + System.currentTimeMillis() + "-" + random.nextInt(1000));
+            
+            try {
+                long newRowId = db.insert(TABLE_BOOKINGS, null, v);
+                if (newRowId == -1) {
+                    android.util.Log.e("DatabaseHelper", "Error inserting sample booking for scheduleId: " + scheduleId);
+                }
+            } catch (Exception insertException) {
+                android.util.Log.e("DatabaseHelper", "Error inserting booking: " + insertException.getMessage(), insertException);
+                // If database was closed, stop trying to insert more bookings
+                if (insertException.getMessage() != null && 
+                    (insertException.getMessage().contains("closed") || 
+                     insertException.getMessage().contains("re-open"))) {
+                    android.util.Log.w("DatabaseHelper", "Database was closed, stopping booking insertion");
+                    return;
+                }
+            }
             
             index += groupSize;
         }
@@ -1201,16 +1499,79 @@ public class DatabaseHelper extends SQLiteOpenHelper {
     
     // Get schedule available seats
     public int getScheduleAvailableSeats(long scheduleId) {
-        SQLiteDatabase db = this.getReadableDatabase();
+        SQLiteDatabase db = null;
+        Cursor cursor = null;
         int availableSeats = 0;
-        Cursor cursor = db.query(TABLE_BUS_SCHEDULES, new String[]{COL_SCHEDULE_AVAILABLE_SEATS},
-                COL_SCHEDULE_ID + " = ?", new String[]{String.valueOf(scheduleId)},
-                null, null, null);
-        if (cursor != null && cursor.moveToFirst()) {
-            availableSeats = cursor.getInt(0);
-            cursor.close();
+        int retries = 0;
+        int maxRetries = 3;
+        
+        while (retries < maxRetries) {
+            try {
+                db = this.getReadableDatabase();
+                if (db == null) {
+                    return 0;
+                }
+                
+                // Check if database is open
+                if (!db.isOpen()) {
+                    android.util.Log.w("DatabaseHelper", "Database is not open, retrying...");
+                    retries++;
+                    if (retries < maxRetries) {
+                        try {
+                            Thread.sleep(100); // Wait 100ms before retry
+                        } catch (InterruptedException ie) {
+                            Thread.currentThread().interrupt();
+                            return 0;
+                        }
+                        continue;
+                    }
+                    return 0;
+                }
+                
+                cursor = db.query(TABLE_BUS_SCHEDULES, new String[]{COL_SCHEDULE_AVAILABLE_SEATS},
+                        COL_SCHEDULE_ID + " = ?", new String[]{String.valueOf(scheduleId)},
+                        null, null, null);
+                if (cursor != null && cursor.moveToFirst()) {
+                    availableSeats = cursor.getInt(0);
+                }
+                break; // Success, exit retry loop
+            } catch (android.database.sqlite.SQLiteDatabaseLockedException e) {
+                android.util.Log.w("DatabaseHelper", "Database locked, retrying... (attempt " + (retries + 1) + "/" + maxRetries + ")");
+                retries++;
+                if (retries < maxRetries) {
+                    try {
+                        Thread.sleep(200); // Wait 200ms before retry
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                        return 0;
+                    }
+                    // Close cursor if it was opened
+                    if (cursor != null && !cursor.isClosed()) {
+                        try {
+                            cursor.close();
+                        } catch (Exception ce) {
+                            // Ignore
+                        }
+                    }
+                    continue;
+                } else {
+                    android.util.Log.e("DatabaseHelper", "Database locked after " + maxRetries + " retries: " + e.getMessage(), e);
+                    return 0;
+                }
+            } catch (Exception e) {
+                android.util.Log.e("DatabaseHelper", "Error getting available seats: " + e.getMessage(), e);
+                break; // Don't retry for other exceptions
+            } finally {
+                if (cursor != null && !cursor.isClosed()) {
+                    try {
+                        cursor.close();
+                    } catch (Exception e) {
+                        android.util.Log.e("DatabaseHelper", "Error closing cursor: " + e.getMessage(), e);
+                    }
+                }
+                // Don't close db here - let SQLiteOpenHelper manage connection pool
+            }
         }
-        db.close();
         return availableSeats;
     }
 
@@ -1311,9 +1672,10 @@ public class DatabaseHelper extends SQLiteOpenHelper {
         SQLiteDatabase db = null;
         Cursor cursor = null;
         try {
-            db = this.getReadableDatabase();
+            // Use writable database for both delete and query operations to avoid connection pool issues
+            db = this.getWritableDatabase();
             if (db == null) {
-                android.util.Log.e("DatabaseHelper", "Cannot get readable database in getSuggestedJourneys");
+                android.util.Log.e("DatabaseHelper", "Cannot get writable database in getSuggestedJourneys");
                 return null;
             }
             
@@ -1331,14 +1693,15 @@ public class DatabaseHelper extends SQLiteOpenHelper {
             
             // First, delete old schedules (past schedules) to keep database clean
             // Delete schedules that are before current time
+            // Use the same database object for delete operation
             try {
-                SQLiteDatabase writeDb = this.getWritableDatabase();
-                String deleteQuery = "DELETE FROM " + TABLE_BUS_SCHEDULES + 
-                        " WHERE (" + COL_SCHEDULE_DATE + " < ? OR " +
-                        "(" + COL_SCHEDULE_DATE + " = ? AND " + COL_SCHEDULE_DEPARTURE_TIME + " < ?))";
-                writeDb.execSQL(deleteQuery, new String[]{currentDate, currentDate, currentTime});
-                android.util.Log.d("DatabaseHelper", "Cleaned up old schedules (before " + currentDate + " " + currentTime + ")");
-                writeDb.close();
+                if (db != null && db.isOpen()) {
+                    String deleteQuery = "DELETE FROM " + TABLE_BUS_SCHEDULES + 
+                            " WHERE (" + COL_SCHEDULE_DATE + " < ? OR " +
+                            "(" + COL_SCHEDULE_DATE + " = ? AND " + COL_SCHEDULE_DEPARTURE_TIME + " < ?))";
+                    db.execSQL(deleteQuery, new String[]{currentDate, currentDate, currentTime});
+                    android.util.Log.d("DatabaseHelper", "Cleaned up old schedules (before " + currentDate + " " + currentTime + ")");
+                }
             } catch (Exception e) {
                 android.util.Log.e("DatabaseHelper", "Error deleting old schedules: " + e.getMessage(), e);
             }
@@ -1360,33 +1723,18 @@ public class DatabaseHelper extends SQLiteOpenHelper {
             // If no upcoming schedules exist, create them (but don't block)
             if (count == 0) {
                 android.util.Log.d("DatabaseHelper", "No upcoming schedules found, will create new ones");
-                // Close read database before opening write database
-                try {
-                    db.close();
-                } catch (Exception e) {
-                    android.util.Log.e("DatabaseHelper", "Error closing read database: " + e.getMessage(), e);
-                }
+                // Don't close db here - we'll need it later. Just create schedules in background.
                 
                 try {
                     // First, ensure we have routes in database
-                    SQLiteDatabase checkDb = this.getReadableDatabase();
-                    Cursor routeCheck = checkDb.query(TABLE_BUS_ROUTES, new String[]{COL_ROUTE_ID}, null, null, null, null, null, "1");
+                    // Use the existing db object instead of opening a new one
+                    Cursor routeCheck = db.query(TABLE_BUS_ROUTES, new String[]{COL_ROUTE_ID}, null, null, null, null, null, "1");
                     boolean hasRoutes = routeCheck != null && routeCheck.moveToFirst();
                     if (routeCheck != null) {
                         routeCheck.close();
                     }
-                    checkDb.close();
                     
-                    if (!hasRoutes) {
-                        android.util.Log.w("DatabaseHelper", "No routes found. Cannot create schedules.");
-                        // Reopen read database for query (will return empty cursor)
-                        try {
-                            db = this.getReadableDatabase();
-                        } catch (Exception ex) {
-                            android.util.Log.e("DatabaseHelper", "Error reopening database: " + ex.getMessage(), ex);
-                            return null;
-                        }
-                    } else {
+                    if (hasRoutes) {
                         // Check current time - if it's too late (after 22:00), start from tomorrow
                         // Also ensure schedules are at least 1 hour from now
                         try {
@@ -1417,22 +1765,27 @@ public class DatabaseHelper extends SQLiteOpenHelper {
                         } catch (Exception scheduleException) {
                             android.util.Log.e("DatabaseHelper", "Error in schedule creation logic: " + scheduleException.getMessage(), scheduleException);
                         }
-                        
-                        // Reopen read database for query
-                        try {
-                            db = this.getReadableDatabase();
-                        } catch (Exception ex) {
-                            android.util.Log.e("DatabaseHelper", "Error reopening database after schedule creation: " + ex.getMessage(), ex);
-                            return null;
-                        }
+                    } else {
+                        android.util.Log.w("DatabaseHelper", "No routes found. Cannot create schedules.");
                     }
                 } catch (Exception e) {
                     android.util.Log.e("DatabaseHelper", "Error creating sample schedules: " + e.getMessage(), e);
-                    // Reopen read database for query even if creation failed
+                }
+                
+                // Ensure db is still open and valid before querying
+                // Reopen if needed, but try to avoid closing the original db
+                try {
+                    if (db == null || !db.isOpen()) {
+                        db = this.getReadableDatabase();
+                    }
+                } catch (Exception ex) {
+                    android.util.Log.e("DatabaseHelper", "Error checking/reopening database: " + ex.getMessage(), ex);
+                    // Try to get a new database connection
                     try {
                         db = this.getReadableDatabase();
-                    } catch (Exception ex) {
-                        android.util.Log.e("DatabaseHelper", "Error reopening database: " + ex.getMessage(), ex);
+                    } catch (Exception ex2) {
+                        android.util.Log.e("DatabaseHelper", "Error getting new database connection: " + ex2.getMessage(), ex2);
+                        return null;
                     }
                 }
             }
@@ -1440,9 +1793,9 @@ public class DatabaseHelper extends SQLiteOpenHelper {
             // Query to get random upcoming schedules in the future (after current time)
             // This will return random suggestions from various routes and locations
             // Schedules should be: (date > currentDate) OR (date = currentDate AND time >= currentTime)
+            // Only get schedules with valid route_number and available seats > 0
             // Order randomly to get variety, then by date and time ascending
-            // Group by route_number to avoid showing multiple schedules for the same route
-            String query = "SELECT " +
+            String query = "SELECT DISTINCT " +
                     "s." + COL_SCHEDULE_ID + " as schedule_id, " +
                     "s." + COL_SCHEDULE_ROUTE_ID + " as route_id, " +
                     "s." + COL_SCHEDULE_DEPARTURE_TIME + " as departure_time, " +
@@ -1462,7 +1815,8 @@ public class DatabaseHelper extends SQLiteOpenHelper {
                     "LEFT JOIN " + TABLE_BUS_COMPANIES + " c ON s." + COL_SCHEDULE_COMPANY_ID + " = c." + COL_COMPANY_ID + " " +
                     "WHERE (s." + COL_SCHEDULE_DATE + " > ? OR " +
                     "(s." + COL_SCHEDULE_DATE + " = ? AND s." + COL_SCHEDULE_DEPARTURE_TIME + " >= ?)) " +
-                    "GROUP BY r." + COL_ROUTE_NUMBER + " " + // Ensure unique route numbers in suggestions
+                    "AND r." + COL_ROUTE_NUMBER + " IS NOT NULL AND r." + COL_ROUTE_NUMBER + " > 0 " +
+                    "AND s." + COL_SCHEDULE_AVAILABLE_SEATS + " > 0 " +
                     "ORDER BY RANDOM() " + // Random order for variety
                     "LIMIT ?";
             
@@ -1507,13 +1861,13 @@ public class DatabaseHelper extends SQLiteOpenHelper {
                 "b." + COL_BOOKING_ID + " as booking_id, " +
                 "b." + COL_BOOKING_STATUS + " as status, " +
                 "b." + COL_BOOKING_TOTAL_FARE + " as total_fare, " +
-                "s." + COL_SCHEDULE_DEPARTURE_TIME + ", " +
-                "s." + COL_SCHEDULE_ARRIVAL_TIME + ", " +
-                "s." + COL_SCHEDULE_DATE + ", " +
-                "b." + COL_BOOKING_BOARDING_POINT + ", " +
-                "b." + COL_BOOKING_DROP_POINT + ", " +
-                "b." + COL_BOOKING_SEAT_NUMBERS + ", " +
-                "c." + COL_COMPANY_NAME + ", " +
+                "s." + COL_SCHEDULE_DEPARTURE_TIME + " as departure_time, " +
+                "s." + COL_SCHEDULE_ARRIVAL_TIME + " as arrival_time, " +
+                "s." + COL_SCHEDULE_DATE + " as date, " +
+                "b." + COL_BOOKING_BOARDING_POINT + " as boarding_point, " +
+                "b." + COL_BOOKING_DROP_POINT + " as drop_point, " +
+                "b." + COL_BOOKING_SEAT_NUMBERS + " as seat_numbers, " +
+                "COALESCE(c." + COL_COMPANY_NAME + ", 'EASYBUS') as company_name, " +
                 "l1." + COL_LOCATION_NAME + " as from_location, " +
                 "l2." + COL_LOCATION_NAME + " as to_location " +
                 "FROM " + TABLE_BOOKINGS + " b " +
@@ -2276,6 +2630,111 @@ public class DatabaseHelper extends SQLiteOpenHelper {
         }
         
         return transactions;
+    }
+    
+    // ========== NOTIFICATION METHODS ==========
+    
+    /**
+     * Insert a new notification
+     */
+    public long insertNotification(String userEmail, String title, String message, String type, Long bookingId) {
+        SQLiteDatabase db = this.getWritableDatabase();
+        ContentValues values = new ContentValues();
+        values.put(COL_NOTIFICATION_USER_EMAIL, userEmail);
+        values.put(COL_NOTIFICATION_TITLE, title);
+        values.put(COL_NOTIFICATION_MESSAGE, message);
+        values.put(COL_NOTIFICATION_TYPE, type != null ? type : "system");
+        values.put(COL_NOTIFICATION_IS_READ, 0);
+        if (bookingId != null) {
+            values.put(COL_NOTIFICATION_BOOKING_ID, bookingId);
+        }
+        values.put(COL_NOTIFICATION_CREATED_AT, new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault()).format(new java.util.Date()));
+        
+        long id = db.insert(TABLE_NOTIFICATIONS, null, values);
+        return id;
+    }
+    
+    /**
+     * Get all notifications for a user
+     */
+    public Cursor getUserNotifications(String userEmail, int limit) {
+        SQLiteDatabase db = this.getReadableDatabase();
+        return db.query(TABLE_NOTIFICATIONS,
+                null,
+                COL_NOTIFICATION_USER_EMAIL + " = ?",
+                new String[]{userEmail},
+                null, null,
+                COL_NOTIFICATION_CREATED_AT + " DESC",
+                limit > 0 ? String.valueOf(limit) : null);
+    }
+    
+    /**
+     * Get unread notification count
+     */
+    public int getUnreadNotificationCount(String userEmail) {
+        SQLiteDatabase db = this.getReadableDatabase();
+        Cursor cursor = db.query(TABLE_NOTIFICATIONS,
+                new String[]{"COUNT(*) as count"},
+                COL_NOTIFICATION_USER_EMAIL + " = ? AND " + COL_NOTIFICATION_IS_READ + " = 0",
+                new String[]{userEmail},
+                null, null, null);
+        
+        int count = 0;
+        if (cursor != null && cursor.moveToFirst()) {
+            count = cursor.getInt(0);
+            cursor.close();
+        }
+        return count;
+    }
+    
+    /**
+     * Mark notification as read
+     */
+    public boolean markNotificationAsRead(long notificationId) {
+        SQLiteDatabase db = this.getWritableDatabase();
+        ContentValues values = new ContentValues();
+        values.put(COL_NOTIFICATION_IS_READ, 1);
+        
+        int updated = db.update(TABLE_NOTIFICATIONS, values,
+                COL_NOTIFICATION_ID + " = ?",
+                new String[]{String.valueOf(notificationId)});
+        return updated > 0;
+    }
+    
+    /**
+     * Mark all notifications as read for a user
+     */
+    public boolean markAllNotificationsAsRead(String userEmail) {
+        SQLiteDatabase db = this.getWritableDatabase();
+        ContentValues values = new ContentValues();
+        values.put(COL_NOTIFICATION_IS_READ, 1);
+        
+        int updated = db.update(TABLE_NOTIFICATIONS, values,
+                COL_NOTIFICATION_USER_EMAIL + " = ? AND " + COL_NOTIFICATION_IS_READ + " = 0",
+                new String[]{userEmail});
+        return updated > 0;
+    }
+    
+    /**
+     * Delete a notification
+     */
+    public boolean deleteNotification(long notificationId) {
+        SQLiteDatabase db = this.getWritableDatabase();
+        int deleted = db.delete(TABLE_NOTIFICATIONS,
+                COL_NOTIFICATION_ID + " = ?",
+                new String[]{String.valueOf(notificationId)});
+        return deleted > 0;
+    }
+    
+    /**
+     * Delete all notifications for a user
+     */
+    public boolean deleteAllNotifications(String userEmail) {
+        SQLiteDatabase db = this.getWritableDatabase();
+        int deleted = db.delete(TABLE_NOTIFICATIONS,
+                COL_NOTIFICATION_USER_EMAIL + " = ?",
+                new String[]{userEmail});
+        return deleted > 0;
     }
 }
 

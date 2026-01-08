@@ -65,7 +65,7 @@
                 android:layout_weight="1"
                 android:text="Chưa khởi hành"
                 android:textSize="12sp"
-                android:backgroundTint="@color/primary"
+                android:background="@drawable/bg_filter_button_active"
                 android:textColor="@android:color/white"
                 android:layout_marginEnd="4dp"
                 style="@style/Widget.MaterialComponents.Button" />
@@ -77,11 +77,11 @@
                 android:layout_weight="1"
                 android:text="Đã khởi hành"
                 android:textSize="12sp"
-                android:backgroundTint="@android:color/transparent"
+                android:background="@drawable/bg_filter_button_inactive"
                 android:textColor="@color/text_secondary"
                 android:layout_marginStart="4dp"
                 android:layout_marginEnd="4dp"
-                style="@style/Widget.MaterialComponents.Button.OutlinedButton" />
+                style="@style/Widget.MaterialComponents.Button" />
 
             <Button
                 android:id="@+id/btnCancelled"
@@ -90,10 +90,10 @@
                 android:layout_weight="1"
                 android:text="Đã hủy"
                 android:textSize="12sp"
-                android:backgroundTint="@android:color/transparent"
+                android:background="@drawable/bg_filter_button_inactive"
                 android:textColor="@color/text_secondary"
                 android:layout_marginStart="4dp"
-                style="@style/Widget.MaterialComponents.Button.OutlinedButton" />
+                style="@style/Widget.MaterialComponents.Button" />
 
         </LinearLayout>
 

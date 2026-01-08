@@ -38,6 +38,49 @@ public class HomeActivity extends AppCompatActivity {
         try {
             dbHelper = new DatabaseHelper(this);
             
+            // Hide journey cards by default until data is loaded
+            View btnJourney1Init = findViewById(R.id.btnJourney1);
+            View btnJourney2Init = findViewById(R.id.btnJourney2);
+            if (btnJourney1Init != null) btnJourney1Init.setVisibility(View.GONE);
+            if (btnJourney2Init != null) btnJourney2Init.setVisibility(View.GONE);
+            
+            // Initialize sample data (locations, routes, schedules) if needed
+            // This ensures database has data for searching, booking, and viewing upcoming trips
+            // Run in background thread to avoid ANR (Application Not Responding)
+            Thread initThread = new Thread(() -> {
+                try {
+                    // Check if activity is still valid before starting
+                    if (isFinishing() || isDestroyed()) {
+                        android.util.Log.d("HomeActivity", "Activity finishing/destroyed, skipping sample data initialization");
+                        return;
+                    }
+                    
+                    android.util.Log.d("HomeActivity", "Starting sample data initialization in background thread...");
+                    dbHelper.initializeSampleData();
+                    android.util.Log.d("HomeActivity", "Sample data initialization complete");
+                    
+                    // Load suggested journeys after data is initialized
+                    // Only update UI if activity is still alive
+                    runOnUiThread(() -> {
+                        try {
+                            if (!isFinishing() && !isDestroyed() && dbHelper != null) {
+                                android.util.Log.d("HomeActivity", "Loading suggested journeys after initialization...");
+                                loadSuggestedJourneys();
+                            } else {
+                                android.util.Log.d("HomeActivity", "Activity finished/destroyed, skipping UI update");
+                            }
+                        } catch (Exception e) {
+                            android.util.Log.e("HomeActivity", "Error loading journeys after init: " + e.getMessage(), e);
+                        }
+                    });
+                } catch (Exception e) {
+                    android.util.Log.e("HomeActivity", "Error initializing sample data: " + e.getMessage(), e);
+                    // Don't crash the app, just log the error
+                }
+            });
+            initThread.setName("SampleDataInitThread");
+            initThread.start();
+            
             // Use AutoCompleteTextView from layout
             AutoCompleteTextView actvFrom = findViewById(R.id.actvFrom);
             AutoCompleteTextView actvTo = findViewById(R.id.actvTo);
@@ -46,6 +89,7 @@ public class HomeActivity extends AppCompatActivity {
             Button btnToday = findViewById(R.id.btnToday);
             Button btnTomorrow = findViewById(R.id.btnTomorrow);
             Button btnOther = findViewById(R.id.btnOther);
+            ImageButton btnNotification = findViewById(R.id.btnNotification);
             
             // Check if views are found
             if (actvFrom == null || actvTo == null || btnSearch == null || btnSwap == null) {
@@ -53,6 +97,14 @@ public class HomeActivity extends AppCompatActivity {
                 android.widget.Toast.makeText(this, "Lỗi tải giao diện. Vui lòng khởi động lại ứng dụng.", android.widget.Toast.LENGTH_LONG).show();
                 finish();
                 return;
+            }
+            
+            // Setup notification button click listener
+            if (btnNotification != null) {
+                btnNotification.setOnClickListener(v -> {
+                    Intent intent = new Intent(HomeActivity.this, NotificationActivity.class);
+                    startActivity(intent);
+                });
             }
             
             // Update greeting with user name
@@ -301,63 +353,27 @@ public class HomeActivity extends AppCompatActivity {
                 BottomNavHelper.setupBottomNavListeners(this, rootView);
             }
             
-            // Load suggested journeys - use runOnUiThread to ensure we're on main thread
-            // Use postDelayed to ensure everything is ready and database is initialized
+            // Also try to load suggested journeys after a short delay (fallback if background init is slow)
+            // This ensures journeys are loaded even if background init hasn't completed
             try {
-                // Use handler to delay execution and ensure we're on main thread
                 new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
                     try {
-                        // Double check activity is still valid and not finishing
                         if (isFinishing() || isDestroyed()) {
-                            android.util.Log.d("HomeActivity", "Activity is finishing or destroyed, skipping loadSuggestedJourneys");
                             return;
                         }
                         
-                        // Ensure we're on main thread
-                        runOnUiThread(() -> {
-                            try {
-                                if (isFinishing() || isDestroyed()) {
-                                    return;
-                                }
-                                
-                                if (dbHelper == null) {
-                                    android.util.Log.w("HomeActivity", "dbHelper is null, recreating");
-                                    dbHelper = new DatabaseHelper(HomeActivity.this);
-                                }
-                                
-                                // Ensure database is ready by doing a simple query
-                                try {
-                                    java.util.List<String> testLocations = dbHelper.getAllLocations();
-                                    if (testLocations == null || testLocations.isEmpty()) {
-                                        android.util.Log.w("HomeActivity", "Database not ready yet, skipping loadSuggestedJourneys");
-                                        return;
-                                    }
-                                } catch (Exception dbTestException) {
-                                    android.util.Log.e("HomeActivity", "Database test failed: " + dbTestException.getMessage(), dbTestException);
-                                    return;
-                                }
-                                
-                                // Now safe to load suggested journeys
-                                if (dbHelper != null && !isFinishing() && !isDestroyed()) {
-                                    try {
-                                        loadSuggestedJourneys();
-                                    } catch (Exception e) {
-                                        android.util.Log.e("HomeActivity", "Error in loadSuggestedJourneys: " + e.getMessage(), e);
-                                        // Don't crash, just log
-                                    }
-                                }
-                            } catch (Exception e) {
-                                android.util.Log.e("HomeActivity", "Error in runOnUiThread: " + e.getMessage(), e);
-                            }
-                        });
+                        if (dbHelper == null) {
+                            dbHelper = new DatabaseHelper(HomeActivity.this);
+                        }
+                        
+                        // Try to load suggested journeys
+                        loadSuggestedJourneys();
                     } catch (Exception e) {
-                        android.util.Log.e("HomeActivity", "Error loading suggested journeys: " + e.getMessage(), e);
-                        // Don't crash the app, just log the error
+                        android.util.Log.e("HomeActivity", "Error in delayed loadSuggestedJourneys: " + e.getMessage(), e);
                     }
-                }, 2000); // Delay 2 seconds to ensure database is fully ready
+                }, 3000); // Delay 3 seconds as fallback
             } catch (Exception e) {
-                android.util.Log.e("HomeActivity", "Error setting up suggested journeys loader: " + e.getMessage(), e);
-                // Don't crash, just skip loading suggested journeys
+                android.util.Log.e("HomeActivity", "Error setting up delayed loader: " + e.getMessage(), e);
             }
         } catch (Exception e) {
             android.util.Log.e("HomeActivity", "Error in onCreate: " + e.getMessage(), e);
@@ -367,238 +383,286 @@ public class HomeActivity extends AppCompatActivity {
     }
     
     private void loadSuggestedJourneys() {
-        // Ensure this runs on main thread
-        if (android.os.Looper.myLooper() != android.os.Looper.getMainLooper()) {
-            runOnUiThread(this::loadSuggestedJourneys);
+        // Double check activity state
+        if (isFinishing() || isDestroyed()) {
+            android.util.Log.d("HomeActivity", "Activity finishing, skipping loadSuggestedJourneys");
             return;
         }
         
-        android.database.Cursor cursor = null;
-        try {
-            // Double check activity state
-            if (isFinishing() || isDestroyed()) {
-                android.util.Log.d("HomeActivity", "Activity finishing, skipping loadSuggestedJourneys");
-                return;
-            }
-            
-            if (dbHelper == null) {
-                android.util.Log.e("HomeActivity", "dbHelper is null");
-                return;
-            }
-            
-            // Get 2 suggested journeys for home page
+        if (dbHelper == null) {
+            android.util.Log.e("HomeActivity", "dbHelper is null");
+            return;
+        }
+        
+        // Run database operations in background thread to avoid ANR
+        new Thread(() -> {
+            android.database.Cursor cursor = null;
             try {
-                cursor = dbHelper.getSuggestedJourneys(2);
-            } catch (Exception dbException) {
-                android.util.Log.e("HomeActivity", "Error getting suggested journeys from database: " + dbException.getMessage(), dbException);
-                return;
-            }
-            
-            if (cursor == null) {
-                android.util.Log.e("HomeActivity", "Cursor is null");
-                return;
-            }
-            
-            if (!cursor.moveToFirst()) {
-                android.util.Log.d("HomeActivity", "No suggested journeys found");
-                return;
-            }
-            
-            // Update journey cards
-            int cardIndex = 0;
-            do {
+                // Get 2 suggested journeys for home page
+                android.util.Log.d("HomeActivity", "Calling getSuggestedJourneys(2) in background thread...");
                 try {
-                    // Get data from cursor
-                    String fromLocation = null;
-                    String toLocation = null;
-                    String departureTime = null;
-                    String scheduleDate = null;
-                    int routeNumber = 0;
-                    long scheduleId = -1;
-                    double price = 0;
-                    String busType = null;
-                    String arrivalTime = null;
-                    int availableSeats = 0;
-                    
+                    cursor = dbHelper.getSuggestedJourneys(2);
+                    android.util.Log.d("HomeActivity", "getSuggestedJourneys returned cursor: " + (cursor != null ? "not null" : "null"));
+                } catch (Exception dbException) {
+                    android.util.Log.e("HomeActivity", "Error getting suggested journeys: " + dbException.getMessage(), dbException);
+                    // Hide journey cards if no data
+                    runOnUiThread(() -> {
+                        View btnJourney1 = findViewById(R.id.btnJourney1);
+                        View btnJourney2 = findViewById(R.id.btnJourney2);
+                        if (btnJourney1 != null) btnJourney1.setVisibility(View.GONE);
+                        if (btnJourney2 != null) btnJourney2.setVisibility(View.GONE);
+                    });
+                    return;
+                }
+                
+                if (cursor == null) {
+                    android.util.Log.e("HomeActivity", "Cursor is null after getSuggestedJourneys");
+                    // Hide journey cards if no data
+                    runOnUiThread(() -> {
+                        View btnJourney1 = findViewById(R.id.btnJourney1);
+                        View btnJourney2 = findViewById(R.id.btnJourney2);
+                        if (btnJourney1 != null) btnJourney1.setVisibility(View.GONE);
+                        if (btnJourney2 != null) btnJourney2.setVisibility(View.GONE);
+                    });
+                    return;
+                }
+                
+                int cursorCount = cursor.getCount();
+                android.util.Log.d("HomeActivity", "Cursor count: " + cursorCount);
+                
+                if (!cursor.moveToFirst()) {
+                    android.util.Log.d("HomeActivity", "No suggested journeys found (count: " + cursorCount + ")");
+                    // Hide journey cards if no data
+                    runOnUiThread(() -> {
+                        View btnJourney1 = findViewById(R.id.btnJourney1);
+                        View btnJourney2 = findViewById(R.id.btnJourney2);
+                        if (btnJourney1 != null) btnJourney1.setVisibility(View.GONE);
+                        if (btnJourney2 != null) btnJourney2.setVisibility(View.GONE);
+                    });
+                    if (cursor != null && !cursor.isClosed()) {
+                        cursor.close();
+                    }
+                    return;
+                }
+                
+                
+                // Collect data from cursor first (in background thread)
+                java.util.List<java.util.Map<String, Object>> journeyData = new java.util.ArrayList<>();
+                int cardIndex = 0;
+                do {
                     try {
+                        // Get data from cursor
+                        java.util.Map<String, Object> journey = new java.util.HashMap<>();
+                        
                         int fromIndex = cursor.getColumnIndex("from_location");
-                        if (fromIndex >= 0) fromLocation = cursor.getString(fromIndex);
+                        if (fromIndex >= 0) journey.put("fromLocation", cursor.getString(fromIndex));
                         
                         int toIndex = cursor.getColumnIndex("to_location");
-                        if (toIndex >= 0) toLocation = cursor.getString(toIndex);
+                        if (toIndex >= 0) journey.put("toLocation", cursor.getString(toIndex));
                         
                         int depTimeIndex = cursor.getColumnIndex("departure_time");
-                        if (depTimeIndex >= 0) departureTime = cursor.getString(depTimeIndex);
+                        if (depTimeIndex >= 0) journey.put("departureTime", cursor.getString(depTimeIndex));
                         
                         int dateIndex = cursor.getColumnIndex("date");
-                        if (dateIndex >= 0) scheduleDate = cursor.getString(dateIndex);
+                        if (dateIndex >= 0) journey.put("scheduleDate", cursor.getString(dateIndex));
                         
                         int routeNumberIndex = cursor.getColumnIndex("route_number");
-                        if (routeNumberIndex >= 0) routeNumber = cursor.getInt(routeNumberIndex);
+                        if (routeNumberIndex >= 0) journey.put("routeNumber", cursor.getInt(routeNumberIndex));
                         
                         int scheduleIdIndex = cursor.getColumnIndex("schedule_id");
-                        if (scheduleIdIndex >= 0) scheduleId = cursor.getLong(scheduleIdIndex);
+                        if (scheduleIdIndex >= 0) journey.put("scheduleId", cursor.getLong(scheduleIdIndex));
                         
                         int priceIndex = cursor.getColumnIndex("price");
-                        if (priceIndex >= 0) price = cursor.getDouble(priceIndex);
+                        if (priceIndex >= 0) journey.put("price", cursor.getDouble(priceIndex));
                         
                         int busTypeIndex = cursor.getColumnIndex("bus_type");
-                        if (busTypeIndex >= 0) busType = cursor.getString(busTypeIndex);
+                        if (busTypeIndex >= 0) journey.put("busType", cursor.getString(busTypeIndex));
                         
                         int arrivalTimeIndex = cursor.getColumnIndex("arrival_time");
-                        if (arrivalTimeIndex >= 0) arrivalTime = cursor.getString(arrivalTimeIndex);
+                        if (arrivalTimeIndex >= 0) journey.put("arrivalTime", cursor.getString(arrivalTimeIndex));
                         
                         int availableSeatsIndex = cursor.getColumnIndex("available_seats");
-                        if (availableSeatsIndex >= 0) availableSeats = cursor.getInt(availableSeatsIndex);
+                        if (availableSeatsIndex >= 0) journey.put("availableSeats", cursor.getInt(availableSeatsIndex));
+                        
+                        journeyData.add(journey);
+                        cardIndex++;
                     } catch (Exception e) {
                         android.util.Log.e("HomeActivity", "Error getting cursor data: " + e.getMessage(), e);
                     }
-                    
-                    // Double check activity state before updating UI
-                    if (isFinishing() || isDestroyed()) {
-                        android.util.Log.d("HomeActivity", "Activity finishing, stopping loadSuggestedJourneys");
-                        break;
-                    }
-                    
-                    // Update views based on card index
-                    TextView tvTerminalName = null;
-                    TextView tvFromLocation = null;
-                    TextView tvToLocation = null;
-                    TextView tvTime = null;
-                    TextView tvDate = null;
-                    androidx.cardview.widget.CardView journeyButton = null;
-                    
+                } while (cursor.moveToNext() && cardIndex < 2);
+                
+                // Close cursor in background thread
+                if (cursor != null && !cursor.isClosed()) {
                     try {
-                        if (cardIndex == 0) {
-                            tvTerminalName = findViewById(R.id.tvJourney1Terminal);
-                            tvFromLocation = findViewById(R.id.tvJourney1From);
-                            tvToLocation = findViewById(R.id.tvJourney1To);
-                            tvTime = findViewById(R.id.tvJourney1Time);
-                            tvDate = findViewById(R.id.tvJourney1Date);
-                            journeyButton = findViewById(R.id.btnJourney1);
-                        } else if (cardIndex == 1) {
-                            tvTerminalName = findViewById(R.id.tvJourney2Terminal);
-                            tvFromLocation = findViewById(R.id.tvJourney2From);
-                            tvToLocation = findViewById(R.id.tvJourney2To);
-                            tvTime = findViewById(R.id.tvJourney2Time);
-                            tvDate = findViewById(R.id.tvJourney2Date);
-                            journeyButton = findViewById(R.id.btnJourney2);
+                        cursor.close();
+                    } catch (Exception e) {
+                        android.util.Log.e("HomeActivity", "Error closing cursor: " + e.getMessage(), e);
+                    }
+                }
+                
+                // Update UI on main thread
+                final java.util.List<java.util.Map<String, Object>> finalJourneyData = journeyData;
+                runOnUiThread(() -> {
+                    try {
+                        if (isFinishing() || isDestroyed()) {
+                            return;
+                        }
+                        
+                        if (finalJourneyData.isEmpty()) {
+                            // Hide journey cards if no data
+                            View btnJourney1 = findViewById(R.id.btnJourney1);
+                            View btnJourney2 = findViewById(R.id.btnJourney2);
+                            if (btnJourney1 != null) btnJourney1.setVisibility(View.GONE);
+                            if (btnJourney2 != null) btnJourney2.setVisibility(View.GONE);
+                            return;
+                        }
+                        
+                        // Show journey cards
+                        View btnJourney1 = findViewById(R.id.btnJourney1);
+                        View btnJourney2 = findViewById(R.id.btnJourney2);
+                        if (btnJourney1 != null) btnJourney1.setVisibility(View.VISIBLE);
+                        if (btnJourney2 != null) btnJourney2.setVisibility(View.VISIBLE);
+                        
+                        // Update journey cards
+                        for (int i = 0; i < finalJourneyData.size() && i < 2; i++) {
+                            java.util.Map<String, Object> journey = finalJourneyData.get(i);
+                            
+                            String fromLocation = (String) journey.get("fromLocation");
+                            String toLocation = (String) journey.get("toLocation");
+                            String departureTime = (String) journey.get("departureTime");
+                            String scheduleDate = (String) journey.get("scheduleDate");
+                            int routeNumber = journey.get("routeNumber") != null ? (Integer) journey.get("routeNumber") : 0;
+                            long scheduleId = journey.get("scheduleId") != null ? ((Number) journey.get("scheduleId")).longValue() : -1;
+                            double price = journey.get("price") != null ? ((Number) journey.get("price")).doubleValue() : 0;
+                            String busType = (String) journey.get("busType");
+                            String arrivalTime = (String) journey.get("arrivalTime");
+                            int availableSeats = journey.get("availableSeats") != null ? (Integer) journey.get("availableSeats") : 0;
+                            
+                            // Get views based on card index
+                            TextView tvTerminalName = null;
+                            TextView tvFromLocation = null;
+                            TextView tvToLocation = null;
+                            TextView tvTime = null;
+                            TextView tvDate = null;
+                            androidx.cardview.widget.CardView journeyButton = null;
+                            
+                            if (i == 0) {
+                                tvTerminalName = findViewById(R.id.tvJourney1Terminal);
+                                tvFromLocation = findViewById(R.id.tvJourney1From);
+                                tvToLocation = findViewById(R.id.tvJourney1To);
+                                tvTime = findViewById(R.id.tvJourney1Time);
+                                tvDate = findViewById(R.id.tvJourney1Date);
+                                journeyButton = findViewById(R.id.btnJourney1);
+                            } else if (i == 1) {
+                                tvTerminalName = findViewById(R.id.tvJourney2Terminal);
+                                tvFromLocation = findViewById(R.id.tvJourney2From);
+                                tvToLocation = findViewById(R.id.tvJourney2To);
+                                tvTime = findViewById(R.id.tvJourney2Time);
+                                tvDate = findViewById(R.id.tvJourney2Date);
+                                journeyButton = findViewById(R.id.btnJourney2);
+                            }
+                            
+                            if (tvTerminalName == null || journeyButton == null) {
+                                continue;
+                            }
+                            
+                            // Update terminal name
+                            if (routeNumber > 0) {
+                                tvTerminalName.setText("Tuyến số " + routeNumber);
+                            } else {
+                                tvTerminalName.setText("Bến xe " + (i + 1));
+                            }
+                            
+                            // Update locations
+                            if (tvFromLocation != null && fromLocation != null) {
+                                tvFromLocation.setText("Từ: " + fromLocation);
+                            }
+                            if (tvToLocation != null && toLocation != null) {
+                                tvToLocation.setText("Đến: " + toLocation);
+                            }
+                            
+                            // Update time
+                            if (tvTime != null && departureTime != null && scheduleDate != null) {
+                                try {
+                                    String timeStr = DateTimeHelper.formatTime(departureTime);
+                                    String dayStr = DateTimeHelper.getDayOfWeek(scheduleDate);
+                                    if (dayStr != null && !dayStr.isEmpty()) {
+                                        tvTime.setText(timeStr + ", " + dayStr);
+                                    } else {
+                                        tvTime.setText(timeStr);
+                                    }
+                                } catch (Exception e) {
+                                    tvTime.setText(departureTime);
+                                }
+                            }
+                            
+                            // Update date
+                            if (tvDate != null && scheduleDate != null) {
+                                try {
+                                    String formattedDate = DateTimeHelper.formatDate(scheduleDate);
+                                    tvDate.setText(formattedDate != null ? formattedDate : scheduleDate);
+                                } catch (Exception e) {
+                                    tvDate.setText(scheduleDate);
+                                }
+                            }
+                            
+                            // Set click listener
+                            if (scheduleId > 0) {
+                                final long finalScheduleId = scheduleId;
+                                final String finalFromLocation = fromLocation;
+                                final String finalToLocation = toLocation;
+                                final int finalRouteNumber = routeNumber;
+                                final double finalPrice = price;
+                                final String finalDepartureTime = departureTime;
+                                final String finalArrivalTime = arrivalTime;
+                                final String finalBusType = busType;
+                                final String finalScheduleDate = scheduleDate;
+                                final int finalAvailableSeats = availableSeats;
+                                
+                                journeyButton.setOnClickListener(v -> {
+                                    try {
+                                        Intent intent = new Intent(HomeActivity.this, ChooseSeatActivity.class);
+                                        intent.putExtra("from_location", finalFromLocation);
+                                        intent.putExtra("to_location", finalToLocation);
+                                        intent.putExtra("schedule_id", finalScheduleId);
+                                        intent.putExtra("route_number", finalRouteNumber);
+                                        intent.putExtra("price", finalPrice);
+                                        intent.putExtra("departure_time", finalDepartureTime);
+                                        intent.putExtra("arrival_time", finalArrivalTime);
+                                        intent.putExtra("bus_type", finalBusType);
+                                        intent.putExtra("schedule_date", finalScheduleDate);
+                                        intent.putExtra("available_seats", finalAvailableSeats);
+                                        startActivity(intent);
+                                    } catch (Exception e) {
+                                        android.util.Log.e("HomeActivity", "Error opening ChooseSeatActivity: " + e.getMessage(), e);
+                                        Toast.makeText(HomeActivity.this, "Không thể mở trang đặt vé", Toast.LENGTH_SHORT).show();
+                                    }
+                                });
+                            }
                         }
                     } catch (Exception e) {
-                        android.util.Log.e("HomeActivity", "Error finding views: " + e.getMessage(), e);
-                        continue; // Skip this card if views not found
+                        android.util.Log.e("HomeActivity", "Error updating UI: " + e.getMessage(), e);
                     }
-                    
-                    // Skip if views are null
-                    if (tvTerminalName == null || journeyButton == null) {
-                        android.util.Log.w("HomeActivity", "Views are null for card index: " + cardIndex);
-                        continue;
-                    }
-                    
-                    // Double check views are still valid
-                    if (isFinishing() || isDestroyed()) {
-                        break;
-                    }
-                    
-                    // Update terminal name (route number)
-                    if (tvTerminalName != null) {
-                        if (routeNumber > 0) {
-                            tvTerminalName.setText("Tuyến số " + routeNumber);
-                        } else {
-                            tvTerminalName.setText("Bến xe " + (cardIndex + 1));
-                        }
-                    }
-                    
-                    // Update from location
-                    if (tvFromLocation != null && fromLocation != null) {
-                        tvFromLocation.setText("Từ: " + fromLocation);
-                    }
-                    
-                    // Update to location
-                    if (tvToLocation != null && toLocation != null) {
-                        tvToLocation.setText("Đến: " + toLocation);
-                    }
-                    
-                    // Update departure time
-                    if (tvTime != null && departureTime != null && scheduleDate != null) {
-                        try {
-                            String timeStr = DateTimeHelper.formatTime(departureTime);
-                            String dayStr = DateTimeHelper.getDayOfWeek(scheduleDate);
-                            tvTime.setText(timeStr + ", " + dayStr);
-                        } catch (Exception e) {
-                            tvTime.setText(departureTime);
-                        }
-                    }
-                    
-                    // Update date
-                    if (tvDate != null && scheduleDate != null) {
-                        try {
-                            tvDate.setText(DateTimeHelper.formatDate(scheduleDate));
-                        } catch (Exception e) {
-                            tvDate.setText(scheduleDate);
-                        }
-                    }
-                    
-                    // Set click listener to open ChooseSeatActivity
-                    if (scheduleId > 0 && journeyButton != null) {
-                        final long finalScheduleId = scheduleId;
-                        final String finalFromLocation = fromLocation;
-                        final String finalToLocation = toLocation;
-                        final int finalRouteNumber = routeNumber;
-                        final double finalPrice = price;
-                        final String finalDepartureTime = departureTime;
-                        final String finalArrivalTime = arrivalTime;
-                        final String finalBusType = busType;
-                        final String finalScheduleDate = scheduleDate;
-                        final int finalAvailableSeats = availableSeats;
-                        
-                        journeyButton.setOnClickListener(v -> {
-                            try {
-                                Intent intent = new Intent(HomeActivity.this, ChooseSeatActivity.class);
-                                intent.putExtra("from_location", finalFromLocation);
-                                intent.putExtra("to_location", finalToLocation);
-                                intent.putExtra("schedule_id", finalScheduleId);
-                                intent.putExtra("route_number", finalRouteNumber);
-                                intent.putExtra("price", finalPrice);
-                                intent.putExtra("departure_time", finalDepartureTime);
-                                intent.putExtra("arrival_time", finalArrivalTime);
-                                intent.putExtra("bus_type", finalBusType);
-                                intent.putExtra("schedule_date", finalScheduleDate);
-                                intent.putExtra("available_seats", finalAvailableSeats);
-                                startActivity(intent);
-                            } catch (Exception e) {
-                                android.util.Log.e("HomeActivity", "Error opening ChooseSeatActivity: " + e.getMessage(), e);
-                                Toast.makeText(HomeActivity.this, "Không thể mở trang đặt vé", Toast.LENGTH_SHORT).show();
-                            }
-                        });
-                    }
-                    
-                    cardIndex++;
-                } catch (Exception e) {
-                    android.util.Log.e("HomeActivity", "Error updating journey card: " + e.getMessage(), e);
-                }
-            } while (cursor.moveToNext() && cardIndex < 2);
-        } catch (Exception e) {
-            android.util.Log.e("HomeActivity", "Error loading suggested journeys: " + e.getMessage(), e);
-            // Don't crash the app, just log the error
-        } finally {
-            if (cursor != null && !cursor.isClosed()) {
-                try {
-                    cursor.close();
-                } catch (Exception e) {
-                    android.util.Log.e("HomeActivity", "Error closing cursor: " + e.getMessage(), e);
-                }
+                });
+            } catch (Exception e) {
+                android.util.Log.e("HomeActivity", "Error loading suggested journeys: " + e.getMessage(), e);
+                runOnUiThread(() -> {
+                    View btnJourney1 = findViewById(R.id.btnJourney1);
+                    View btnJourney2 = findViewById(R.id.btnJourney2);
+                    if (btnJourney1 != null) btnJourney1.setVisibility(View.GONE);
+                    if (btnJourney2 != null) btnJourney2.setVisibility(View.GONE);
+                });
             }
-        }
+        }).start();
     }
     
     // Use DateTimeHelper utility methods instead of duplicate code
 
     @Override
     protected void onDestroy() {
-        if (dbHelper != null) {
-            dbHelper.close();
-        }
+        // Don't close dbHelper here - SQLiteOpenHelper manages connection pool automatically
+        // Closing it manually can cause issues with background threads that are still running
+        // Android will automatically cleanup when the app process is killed
         super.onDestroy();
     }
 }

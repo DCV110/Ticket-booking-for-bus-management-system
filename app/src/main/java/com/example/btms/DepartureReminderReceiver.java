@@ -17,7 +17,20 @@ public class DepartureReminderReceiver extends BroadcastReceiver {
         Log.d("DepartureReminderReceiver", "Reminder triggered for booking: " + bookingId);
 
         if (fromLocation != null && toLocation != null && departureTime != null && date != null) {
-            NotificationHelper.showDepartureReminderNotification(context, bookingId, 
+            // Get user email from booking
+            DatabaseHelper dbHelper = new DatabaseHelper(context);
+            android.database.Cursor cursor = dbHelper.getBookingDetails(bookingId);
+            String userEmail = null;
+            if (cursor != null && cursor.moveToFirst()) {
+                int emailIndex = cursor.getColumnIndex("user_email");
+                if (emailIndex >= 0) {
+                    userEmail = cursor.getString(emailIndex);
+                }
+                cursor.close();
+            }
+            dbHelper.close();
+            
+            NotificationHelper.showDepartureReminderNotification(context, userEmail, bookingId, 
                     fromLocation, toLocation, departureTime, date);
         }
     }

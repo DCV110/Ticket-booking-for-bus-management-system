@@ -6,6 +6,8 @@ import android.graphics.Bitmap;
 import android.net.Uri;
 import android.util.Log;
 
+import androidx.core.content.FileProvider;
+
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
@@ -45,15 +47,28 @@ public class EmailHelper {
                 File qrFile = saveBitmapToFile(context, qrBitmap, "qr_code_" + bookingCode + ".png");
                 if (qrFile != null && qrFile.exists()) {
                     try {
-                        Uri qrUri = android.net.Uri.fromFile(qrFile);
+                        // Use FileProvider to get safe URI (content:// instead of file://)
+                        // This prevents FileUriExposedException on Android 7.0+
+                        Uri qrUri = FileProvider.getUriForFile(
+                                context,
+                                context.getPackageName() + ".provider", // Must match authorities in AndroidManifest.xml
+                                qrFile
+                        );
+                        
                         emailIntent.putExtra(Intent.EXTRA_STREAM, qrUri);
+                        // IMPORTANT: Grant read permission to the receiving app (Gmail, Outlook, etc.)
+                        emailIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
                     } catch (Exception e) {
                         Log.e("EmailHelper", "Error attaching QR code: " + e.getMessage(), e);
                     }
                 }
             }
             
-            context.startActivity(Intent.createChooser(emailIntent, "Gửi email xác nhận"));
+            try {
+                context.startActivity(Intent.createChooser(emailIntent, "Gửi email xác nhận"));
+            } catch (android.content.ActivityNotFoundException ex) {
+                Log.e("EmailHelper", "No email app found: " + ex.getMessage(), ex);
+            }
         } catch (Exception e) {
             Log.e("EmailHelper", "Error sending email: " + e.getMessage(), e);
         }

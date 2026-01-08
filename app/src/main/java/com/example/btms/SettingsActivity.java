@@ -220,44 +220,6 @@ public class SettingsActivity extends AppCompatActivity {
     private void loadStatistics() {
         if (userEmail == null) return;
 
-        android.database.Cursor cursor = dbHelper.getAllUserBookings(userEmail);
-        int totalTrips = 0;
-        double totalSpent = 0;
-        int confirmedCount = 0;
-        int cancelledCount = 0;
-
-        if (cursor != null) {
-            totalTrips = cursor.getCount();
-            if (cursor.moveToFirst()) {
-                do {
-                    double fare = cursor.getDouble(cursor.getColumnIndexOrThrow("total_fare"));
-                    String status = cursor.getString(cursor.getColumnIndexOrThrow("status"));
-                    totalSpent += fare;
-                    
-                    if (status != null) {
-                        if (status.equalsIgnoreCase("confirmed")) {
-                            confirmedCount++;
-                        } else if (status.equalsIgnoreCase("cancelled")) {
-                            cancelledCount++;
-                        }
-                    }
-                } while (cursor.moveToNext());
-            }
-            cursor.close();
-        }
-
-        TextView tvTotalTrips = findViewById(R.id.tvTotalTrips);
-        TextView tvTotalSpent = findViewById(R.id.tvTotalSpent);
-
-        if (tvTotalTrips != null) {
-            tvTotalTrips.setText(String.valueOf(totalTrips));
-        }
-
-        if (tvTotalSpent != null) {
-            tvTotalSpent.setText(CurrencyHelper.formatPrice(totalSpent));
-        }
-
-        // Booking History
         View llBookingHistory = findViewById(R.id.llBookingHistory);
         if (llBookingHistory != null) {
             llBookingHistory.setOnClickListener(v -> {
@@ -266,7 +228,6 @@ public class SettingsActivity extends AppCompatActivity {
             });
         }
 
-        // Statistics
         View llStatistics = findViewById(R.id.llStatistics);
         if (llStatistics != null) {
             llStatistics.setOnClickListener(v -> {
@@ -274,6 +235,59 @@ public class SettingsActivity extends AppCompatActivity {
                 startActivity(intent);
             });
         }
+
+        new Thread(() -> {
+            try {
+                android.database.Cursor cursor = dbHelper.getAllUserBookings(userEmail);
+                int totalTrips = 0;
+                double totalSpent = 0;
+                int confirmedCount = 0;
+                int cancelledCount = 0;
+
+                if (cursor != null) {
+                    totalTrips = cursor.getCount();
+                    if (cursor.moveToFirst()) {
+                        do {
+                            double fare = cursor.getDouble(cursor.getColumnIndexOrThrow("total_fare"));
+                            String status = cursor.getString(cursor.getColumnIndexOrThrow("status"));
+                            totalSpent += fare;
+                            
+                            if (status != null) {
+                                if (status.equalsIgnoreCase("confirmed")) {
+                                    confirmedCount++;
+                                } else if (status.equalsIgnoreCase("cancelled")) {
+                                    cancelledCount++;
+                                }
+                            }
+                        } while (cursor.moveToNext());
+                    }
+                    cursor.close();
+                }
+
+                final int finalTotalTrips = totalTrips;
+                final double finalTotalSpent = totalSpent;
+
+                runOnUiThread(() -> {
+                    if (isFinishing() || isDestroyed()) {
+                        return;
+                    }
+
+                    TextView tvTotalTrips = findViewById(R.id.tvTotalTrips);
+                    TextView tvTotalSpent = findViewById(R.id.tvTotalSpent);
+
+                    if (tvTotalTrips != null) {
+                        tvTotalTrips.setText(String.valueOf(finalTotalTrips));
+                    }
+
+                    if (tvTotalSpent != null) {
+                        tvTotalSpent.setText(CurrencyHelper.formatPrice(finalTotalSpent));
+                    }
+                });
+            } catch (Exception e) {
+                android.util.Log.e("SettingsActivity", "Error loading statistics: " + e.getMessage(), e);
+                // Keep default values (0) if error occurs
+            }
+        }).start();
     }
 
     private void showLogoutDialog() {

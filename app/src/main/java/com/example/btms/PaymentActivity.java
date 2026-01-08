@@ -477,10 +477,13 @@ public class PaymentActivity extends AppCompatActivity {
     
     private long saveBookingToDatabase(DatabaseHelper dbHelper, android.content.SharedPreferences sharedPreferences, BookingData data) {
         String bookingUserEmail = sharedPreferences.getString("user_email", "hello@example.com");
-        java.text.SimpleDateFormat sdf = new java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault());
+        // Save booking date with time for accurate sorting
+        java.text.SimpleDateFormat sdf = new java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault());
         String bookingDate = sdf.format(new java.util.Date());
         
-        return dbHelper.insertBooking(
+        android.util.Log.d("PaymentActivity", "Saving booking to database - User: " + bookingUserEmail + ", Schedule ID: " + data.scheduleId);
+        
+        long bookingId = dbHelper.insertBooking(
                 data.scheduleId,
                 bookingUserEmail,
                 data.passengerName,
@@ -493,6 +496,9 @@ public class PaymentActivity extends AppCompatActivity {
                 "confirmed",
                 bookingDate
         );
+        
+        android.util.Log.d("PaymentActivity", "Booking saved with ID: " + bookingId);
+        return bookingId;
     }
     
     private String getBookingCode(DatabaseHelper dbHelper, long bookingId) {
@@ -582,8 +588,9 @@ public class PaymentActivity extends AppCompatActivity {
     
     private void showBookingNotifications(BookingData data, long bookingId) {
         if (data.departureTime != null && data.scheduleDate != null) {
+            String userEmail = sharedPreferences.getString("user_email", null);
             NotificationHelper.showBookingConfirmationNotification(
-                    this, data.fromLocation, data.toLocation, data.departureTime, data.scheduleDate);
+                    this, userEmail, data.fromLocation, data.toLocation, data.departureTime, data.scheduleDate, bookingId);
             
             NotificationHelper.scheduleDepartureReminder(
                     this, bookingId, data.fromLocation, data.toLocation, data.departureTime, data.scheduleDate);

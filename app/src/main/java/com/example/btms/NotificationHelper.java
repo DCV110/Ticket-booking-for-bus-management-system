@@ -43,17 +43,27 @@ public class NotificationHelper {
     }
 
     // Thông báo sau khi đặt vé thành công
-    public static void showBookingConfirmationNotification(Context context, String fromLocation, 
-                                                           String toLocation, String departureTime, 
-                                                           String date) {
+    public static void showBookingConfirmationNotification(Context context, String userEmail, 
+                                                           String fromLocation, String toLocation, 
+                                                           String departureTime, String date, 
+                                                           Long bookingId) {
         createNotificationChannel(context);
 
         String title = "Đặt vé thành công!";
         String message = String.format("Chuyến đi từ %s đến %s\nKhởi hành: %s ngày %s", 
                 fromLocation, toLocation, departureTime, DateTimeHelper.formatDateForDisplay(date));
 
+        // Save to database
+        if (userEmail != null) {
+            DatabaseHelper dbHelper = new DatabaseHelper(context);
+            dbHelper.insertNotification(userEmail, title, message, "booking", bookingId);
+            dbHelper.close();
+        }
+
         Intent intent = new Intent(context, BookingDetailActivity.class);
-        intent.putExtra("booking_id", -1); // Will be set by caller if needed
+        if (bookingId != null && bookingId > 0) {
+            intent.putExtra("booking_id", bookingId);
+        }
         intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
         PendingIntent pendingIntent = PendingIntent.getActivity(context, 0, intent, 
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
@@ -132,14 +142,22 @@ public class NotificationHelper {
     }
 
     // Hiển thị thông báo nhắc nhở
-    public static void showDepartureReminderNotification(Context context, long bookingId,
-                                                         String fromLocation, String toLocation,
-                                                         String departureTime, String date) {
+    public static void showDepartureReminderNotification(Context context, String userEmail, 
+                                                         long bookingId, String fromLocation, 
+                                                         String toLocation, String departureTime, 
+                                                         String date) {
         createNotificationChannel(context);
 
         String title = "Nhắc nhở: Chuyến xe sắp khởi hành!";
         String message = String.format("Chuyến đi từ %s đến %s sẽ khởi hành lúc %s ngày %s\nCòn 30 phút nữa!", 
                 fromLocation, toLocation, departureTime, DateTimeHelper.formatDateForDisplay(date));
+
+        // Save to database
+        if (userEmail != null) {
+            DatabaseHelper dbHelper = new DatabaseHelper(context);
+            dbHelper.insertNotification(userEmail, title, message, "reminder", bookingId);
+            dbHelper.close();
+        }
 
         Intent intent = new Intent(context, BookingDetailActivity.class);
         intent.putExtra("booking_id", bookingId);
